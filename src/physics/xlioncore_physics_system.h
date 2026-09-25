@@ -5,6 +5,7 @@
 // Physics system - compiled entirely inside LIONCore.dll (see xlioncore_plugin_entry.cpp, the ONLY
 // place RegisterComponents / RegisterSystems for these types are called). Requires xlioncore::transform
 // + rigid_body; pose is read/written on Transform, collider/body flags stay on rigid_body.
+// Collider half-extents = 0.5 * Transform.Scale (unit mesh / unit cube convention).
 #include "xlioncore_physics.h"
 #include "xlioncore_physics_backend.h"
 #include "../transform/xlioncore_transform.h"
@@ -27,10 +28,10 @@ namespace xlioncore::physics
             Query.m_Must.AddFromComponents<xlioncore::transform, rigid_body>();
             auto S = Search(Query);
 
-            // Lazily create (or recreate when HalfExtents*Scale drifts) so collider matches visuals
+            // Lazily create (or recreate when 0.5*Scale drifts) so collider matches visuals
             Foreach(S, [&](xlioncore::transform& T, rigid_body& RB) noexcept
             {
-                const xmath::fvec3 ScaledHalfExtents = RB.m_HalfExtents * T.m_Scale;
+                const xmath::fvec3 ScaledHalfExtents = T.m_Scale * 0.5f;
                 if (B3_IS_NON_NULL(RB.m_BodyId))
                 {
                     if (RB.m_BodyHalfExtents == ScaledHalfExtents) return;

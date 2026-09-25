@@ -20,9 +20,15 @@ namespace xlioncore::physics
         backend  (void) noexcept;
         ~backend (void) noexcept;
 
-        b3BodyId     CreateBody   (bool bDynamic, const xmath::fvec3& Position, const xmath::fvec3& HalfExtents) noexcept;
-        void         Step         (void) noexcept;
-        xmath::fvec3 GetPosition  (b3BodyId BodyId) const noexcept;
+        b3BodyId     CreateBody    ( bool bDynamic
+                                   , const xmath::fvec3& Position
+                                   , const xmath::fquat& Rotation
+                                   , const xmath::fvec3& HalfExtents ) noexcept;
+        void         Step          (void) noexcept;
+        xmath::fvec3 GetPosition   (b3BodyId BodyId) const noexcept;
+        xmath::fquat GetRotation   (b3BodyId BodyId) const noexcept;
+        void         SetTransform  (b3BodyId BodyId, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept;
+        void         DestroyBody   (b3BodyId BodyId) noexcept;
 
     private:
         b3WorldId m_World;

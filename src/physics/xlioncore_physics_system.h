@@ -25,28 +25,6 @@ namespace xlioncore::physics
 
         system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
-        void OnCreate(void) noexcept
-        {
-            // Temporary proof-of-life: a static ground plane and one dynamic box dropped above it, so
-            // there is something real to observe falling under gravity without needing the Level
-            // Editor's own entity-creation UI wired up yet. Remove once physics is exposed there instead.
-            auto& Archetype = getOrCreateArchetype<rigid_body>();
-
-            Archetype.CreateEntity([](rigid_body& RB) noexcept
-            {
-                RB.m_bDynamic    = false;
-                RB.m_Position    = { 0.0f, 0.0f, 0.0f };
-                RB.m_HalfExtents = { 50.0f, 1.0f, 50.0f };
-            });
-
-            Archetype.CreateEntity([](rigid_body& RB) noexcept
-            {
-                RB.m_bDynamic    = true;
-                RB.m_Position    = { 0.0f, 10.0f, 0.0f };
-                RB.m_HalfExtents = { 0.5f, 0.5f, 0.5f };
-            });
-        }
-
         void OnUpdate(void) noexcept
         {
             xecs::query::instance Query;
@@ -67,10 +45,6 @@ namespace xlioncore::physics
             {
                 if (!RB.m_bDynamic) return;
                 RB.m_Position = m_Backend.GetPosition(RB.m_BodyId);
-
-                // Temporary proof-of-life printf - remove once this is visible in the Inspector/viewport instead.
-                std::printf("[Physics] dynamic body Y = %f\n", RB.m_Position.m_Y);
-                std::fflush(stdout);
             });
         }
     };

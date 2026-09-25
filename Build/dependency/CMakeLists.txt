@@ -23,15 +23,17 @@ FetchContent_MakeAvailable(box3d)
 # DLL must share the one compiled instance of each, not two disconnected copies (relocated verbatim
 # from xLION's own CMakeLists.txt, where this block used to live directly).
 #
-# src/physics/xlioncore_physics_world.cpp: the first non-ECS engine system, proving xLIONCore is a
-# real home for more than just the ECS - box3d itself, and every box3d call, stays private to this
-# DLL, wrapped behind the xecs-agnostic `world` class (see xlioncore_physics_world.h's own comment on
-# why it - and NOT the xecs-facing system/component code - is what actually lives in this DLL).
+# src/physics/*.cpp: the first non-ECS engine system, proving xLIONCore is a real home for more than
+# just the ECS. Self-registers via XecsPlugin_RegisterComponents/RegisterSystems (see
+# xlioncore_plugin_entry.cpp's own comment) - the same ABI Game.dll already uses - so both
+# registration and every query/entity-creation call for rigid_body/system are compiled into THIS DLL;
+# xLION.exe never includes these headers.
 add_library(xLIONCore SHARED
   "${CMAKE_SOURCE_DIR}/dependencies/xECSV2/src/xecs.cpp"
   "${CMAKE_SOURCE_DIR}/dependencies/xtextfile/source/xtextfile.cpp"
   "${CMAKE_SOURCE_DIR}/dependencies/xproperty/source/xcore/my_properties.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_physics_world.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_physics_backend.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_plugin_entry.cpp"
 )
 set_target_properties(xLIONCore PROPERTIES OUTPUT_NAME "LIONCore")
 target_include_directories(xLIONCore PRIVATE

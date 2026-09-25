@@ -2,13 +2,12 @@
 #define XLIONCORE_PHYSICS_H
 #pragma once
 
-// The physics component: lives entirely inside LIONCore.dll along with the box3d world that drives
-// it - from any consumer's point of view this is just an ECS component, same as any other. Carries
-// its own position/rotation rather than depending on a shared Transform component: xlevel::transform
-// lives up in plugins/xlevel.plugin, a layer above xLIONCore, so depending on it here would invert
-// the intended dependency direction. Reconciling with a shared Transform component (for a future
-// Graphics.dll, say) is a deliberate later step, not this one - this component is a self-contained
-// proof that xLIONCore can host more than the ECS.
+// The physics component: registered and consumed entirely inside LIONCore.dll (see
+// xlioncore_plugin_entry.cpp) - xLION.exe never includes this header. Carries its own position/
+// rotation rather than depending on a shared Transform component: xlevel::transform lives up in
+// plugins/xlevel.plugin, a layer above xLIONCore, so depending on it here would invert the intended
+// dependency direction. Reconciling with a shared Transform component (for xLIONRender, say) is a
+// deliberate later step, not this one.
 #include "dependencies/xECSV2/src/xecs.h"
 #include "dependencies/xmath/source/xmath.h"
 #include <box3d/box3d.h>

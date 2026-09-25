@@ -2,17 +2,16 @@
 #define XLIONCORE_PHYSICS_SYSTEM_H
 #pragma once
 
-// The physics system itself - fully inline, like every other user-authored xecs system in this
-// codebase (e.g. xlevel::tick_logger_a/b). This is NOT optional here: any code that touches a user
-// component type by name (Search/Foreach/getOrCreateArchetype - all of xecs_system.h's query
-// machinery) reads xecs::component::type::info_v<T>, a per-binary inline static, so it must be
-// compiled into whichever binary actually calls RegisterComponents<T>() (xLION.exe, via
-// xlevel_session.h) - hiding it inside LIONCore.dll instead reads the DLL's own separate, never-
-// registered copy of rigid_body's metadata (confirmed live: garbage pointers, a crash on the very
-// first CreateEntity). box3d itself still stays entirely inside the DLL - see xlioncore_physics_world.h,
-// which this system only ever calls through, never touching a b3* function directly.
+// The physics system - compiled entirely inside LIONCore.dll now (see xlioncore_plugin_entry.cpp,
+// which is this DLL's own translation unit, and the ONLY place RegisterComponents<rigid_body>()/
+// RegisterSystems<system>() are ever called). xecs::component::type::info_v<T> is a per-binary
+// global: registration and any code that touches a component by name (Search/Foreach/
+// getOrCreateArchetype) have to be compiled into the SAME binary, but that binary no longer has to
+// be xLION.exe - it's this DLL, exactly the way Game.dll already self-registers via
+// XecsPlugin_RegisterComponents/RegisterSystems (dependencies/xECSV2/src/xecs_plugin_api.h). xLION.exe
+// never includes this header at all anymore.
 #include "xlioncore_physics.h"
-#include "xlioncore_physics_world.h"
+#include "xlioncore_physics_backend.h"
 #include <cstdio>
 
 namespace xlioncore::physics
@@ -22,7 +21,7 @@ namespace xlioncore::physics
         constexpr static auto typedef_v = xecs::system::type::update{ .m_pName = "Physics" };
         using query = std::tuple<xecs::query::must<rigid_body>>;
 
-        world m_World;
+        backend m_Backend;
 
         system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
@@ -58,16 +57,16 @@ namespace xlioncore::physics
             Foreach(S, [&](rigid_body& RB) noexcept
             {
                 if (B3_IS_NON_NULL(RB.m_BodyId)) return;
-                RB.m_BodyId = m_World.CreateBody(RB.m_bDynamic, RB.m_Position, RB.m_HalfExtents);
+                RB.m_BodyId = m_Backend.CreateBody(RB.m_bDynamic, RB.m_Position, RB.m_HalfExtents);
             });
 
-            m_World.Step();
+            m_Backend.Step();
 
             // Dynamic bodies moved - pull the new position back into the component
             Foreach(S, [&](rigid_body& RB) noexcept
             {
                 if (!RB.m_bDynamic) return;
-                RB.m_Position = m_World.GetPosition(RB.m_BodyId);
+                RB.m_Position = m_Backend.GetPosition(RB.m_BodyId);
 
                 // Temporary proof-of-life printf - remove once this is visible in the Inspector/viewport instead.
                 std::printf("[Physics] dynamic body Y = %f\n", RB.m_Position.m_Y);

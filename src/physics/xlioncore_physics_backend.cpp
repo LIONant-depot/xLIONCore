@@ -1,19 +1,19 @@
-#include "xlioncore_physics_world.h"
+#include "xlioncore_physics_backend.h"
 
 namespace xlioncore::physics
 {
-    world::world(void) noexcept
+    backend::backend(void) noexcept
     {
         b3WorldDef WorldDef = b3DefaultWorldDef();
         m_World = b3CreateWorld(&WorldDef);
     }
 
-    world::~world(void) noexcept
+    backend::~backend(void) noexcept
     {
         b3DestroyWorld(m_World);
     }
 
-    b3BodyId world::CreateBody(bool bDynamic, const xmath::fvec3& Position, const xmath::fvec3& HalfExtents) noexcept
+    b3BodyId backend::CreateBody(bool bDynamic, const xmath::fvec3& Position, const xmath::fvec3& HalfExtents) noexcept
     {
         b3BodyDef BodyDef = b3DefaultBodyDef();
         BodyDef.type     = bDynamic ? b3_dynamicBody : b3_staticBody;
@@ -27,14 +27,14 @@ namespace xlioncore::physics
         return BodyId;
     }
 
-    void world::Step(void) noexcept
+    void backend::Step(void) noexcept
     {
         constexpr float FixedDt      = 1.0f / 60.0f;
         constexpr int   SubStepCount = 4;
         b3World_Step(m_World, FixedDt, SubStepCount);
     }
 
-    xmath::fvec3 world::GetPosition(b3BodyId BodyId) const noexcept
+    xmath::fvec3 backend::GetPosition(b3BodyId BodyId) const noexcept
     {
         const b3Vec3 P = b3Body_GetPosition(BodyId);
         return { P.x, P.y, P.z };

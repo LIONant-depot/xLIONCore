@@ -2,33 +2,53 @@
 #define XLIONCORE_PHYSICS_BACKEND_H
 #pragma once
 
-// The box3d world, wrapped behind a plain class with no xecs types in its interface at all. Purely
-// internal to this DLL now - both this and the ECS-facing system/component (xlioncore_physics_system.h)
-// are compiled into LIONCore.dll (see xlioncore_plugin_entry.cpp), so nothing here needs dllexport/
-// dllimport: the only symbols this DLL exports are the two self-registration entry points
-// (XecsPlugin_RegisterComponents/RegisterSystems, resolved by xLION.exe via GetProcAddress, same ABI
-// Game.dll already uses) - see xlioncore_plugin_entry.cpp's own comment for why registration and
-// entity iteration have to live in the same binary.
+// Persistent b3WorldId behind a plain class - no xecs types. Creates multi-shape-ready bodies
+// (body first, then hull shape); mass from dynamics (SetMassData) when m_Mass > 0, else shapes.
 #include "dependencies/xmath/source/xmath.h"
 #include <box3d/box3d.h>
+#include <cstdint>
 
 namespace xlioncore::physics
 {
+    struct body_create_params
+    {
+        b3BodyType      m_Type              = b3_dynamicBody;
+        float           m_LinearDamping     = 0.0f;
+        float           m_AngularDamping    = 0.0f;
+        bool            m_EnableSleep       = true;
+        bool            m_IsBullet          = false;
+        xmath::fvec3    m_Position          = {};
+        xmath::fquat    m_Rotation          = xmath::fquat::fromIdentity();
+        xmath::fvec3    m_HalfExtents       = xmath::fvec3::fromOne() * 0.5f;
+        float           m_Density           = 0.0f;   // unused for mass when m_Mass > 0
+        float           m_Mass              = 0.0f;   // >0 => authoritative mass via SetMassData
+        float           m_Friction          = 0.6f;
+        float           m_Restitution       = 0.0f;
+        std::uint64_t   m_CategoryBits      = B3_DEFAULT_CATEGORY_BITS;
+        std::uint64_t   m_MaskBits          = B3_DEFAULT_MASK_BITS;
+        std::int32_t    m_GroupIndex        = 0;
+        bool            m_IsSensor          = false;
+        xmath::fvec3    m_LocalPosition     = {};
+        xmath::fquat    m_LocalRotation     = xmath::fquat::fromIdentity();
+    };
+
     class backend
     {
     public:
         backend  (void) noexcept;
         ~backend (void) noexcept;
 
-        b3BodyId     CreateBody    ( bool bDynamic
-                                   , const xmath::fvec3& Position
-                                   , const xmath::fquat& Rotation
-                                   , const xmath::fvec3& HalfExtents ) noexcept;
-        void         Step          (void) noexcept;
-        xmath::fvec3 GetPosition   (b3BodyId BodyId) const noexcept;
-        xmath::fquat GetRotation   (b3BodyId BodyId) const noexcept;
-        void         SetTransform  (b3BodyId BodyId, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept;
-        void         DestroyBody   (b3BodyId BodyId) noexcept;
+        b3BodyId     CreateBody         ( const body_create_params& Params ) noexcept;
+        void         Step               (void) noexcept;
+        xmath::fvec3 GetPosition        (b3BodyId BodyId) const noexcept;
+        xmath::fquat GetRotation        (b3BodyId BodyId) const noexcept;
+        xmath::fvec3 GetLinearVelocity  (b3BodyId BodyId) const noexcept;
+        xmath::fvec3 GetAngularVelocity (b3BodyId BodyId) const noexcept;
+        void         SetTransform       (b3BodyId BodyId, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept;
+        void         SetMass            (b3BodyId BodyId, float Mass) noexcept;
+        void         ApplyForceToCenter (b3BodyId BodyId, const xmath::fvec3& Force) noexcept;
+        void         ApplyTorque        (b3BodyId BodyId, const xmath::fvec3& Torque) noexcept;
+        void         DestroyBody        (b3BodyId BodyId) noexcept;
 
     private:
         b3WorldId m_World;

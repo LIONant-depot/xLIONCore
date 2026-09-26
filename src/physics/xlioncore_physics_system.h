@@ -2,10 +2,15 @@
 #define XLIONCORE_PHYSICS_SYSTEM_H
 #pragma once
 
-// Physics system - compiled entirely inside LIONCore.dll (see xlioncore_plugin_entry.cpp, the ONLY
-// place RegisterComponents / RegisterSystems for these types are called). Requires xlioncore::transform
-// + rigid_body; pose is read/written on Transform, collider/body flags stay on rigid_body.
-// Collider half-extents = 0.5 * Transform.Scale (unit mesh / unit cube convention).
+// Physics system V1 follow-up + freeze fix:
+//   Body create uses dynamics presence + IsKinematic + Mass.
+//   Dynamic bodies: physics is authoritative while simulating - ignore DirtyToPhysics
+//   pose pushes (inspector/gizmo property writers MarkDirty; pushing that back into Box3D
+//   every frame was resetting the pose => frozen crates).
+//   Kinematic/Static still honor Dirty teleports.
+//   Each tick: (conditional) Dirty push; CoolDown--; apply Force/Torque then clear;
+//   Step; velocity readback; pose writeback WITHOUT Dirty.
+// SHARE args must be non-const refs (xECS iterator assigns into the share tuple slot).
 #include "xlioncore_physics.h"
 #include "xlioncore_physics_backend.h"
 #include "../transform/xlioncore_transform.h"
@@ -16,41 +21,175 @@ namespace xlioncore::physics
     struct system : xecs::system::instance
     {
         constexpr static auto typedef_v = xecs::system::type::update{ .m_pName = "Physics" };
-        using query = std::tuple<xecs::query::must<xlioncore::transform, rigid_body>>;
+        using query = std::tuple
+            < xecs::query::must
+                < xlioncore::transform
+                , physics_body_properties
+                , physics_shape_properties
+                , box3d_body
+                >
+            >;
 
         backend m_Backend;
 
         system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
+        static b3BodyType ResolveBodyType(const dynamics* pDyn, bool IsKinematic) noexcept
+        {
+            if (pDyn) return b3_dynamicBody;
+            return IsKinematic ? b3_kinematicBody : b3_staticBody;
+        }
+
         void OnUpdate(void) noexcept
         {
+            static int s_Tick = 0;
+            ++s_Tick;
+            const bool bLog = (s_Tick <= 3) || ((s_Tick % 60) == 0);
+
             xecs::query::instance Query;
-            Query.m_Must.AddFromComponents<xlioncore::transform, rigid_body>();
+            Query.m_Must.AddFromComponents
+                < xlioncore::transform
+                , physics_body_properties
+                , physics_shape_properties
+                , box3d_body
+                >();
             auto S = Search(Query);
 
-            // Lazily create (or recreate when 0.5*Scale drifts) so collider matches visuals
-            Foreach(S, [&](xlioncore::transform& T, rigid_body& RB) noexcept
+            int nEnt = 0, nNull = 0, nDyn = 0, nKin = 0, nStat = 0, nHasDynComp = 0, nDirty = 0, nDirtyIgnored = 0;
+            float yMin = 1e9f, yMax = -1e9f;
+            float yFirstDyn = -999.f;
+
+            Foreach(S, [&]( xlioncore::transform& T
+                          , physics_body_properties& BodyProps
+                          , physics_shape_properties& ShapeProps
+                          , box3d_body& Body
+                          , dynamics* pDyn ) noexcept
             {
+                ++nEnt;
+                if (pDyn) ++nHasDynComp;
+                if (T.m_DirtyToPhysics) ++nDirty;
+
                 const xmath::fvec3 ScaledHalfExtents = T.m_Scale * 0.5f;
-                if (B3_IS_NON_NULL(RB.m_BodyId))
+                const b3BodyType   ResolvedType      = ResolveBodyType(pDyn, BodyProps.m_IsKinematic);
+                const float        Mass              = pDyn ? pDyn->m_Mass : 0.0f;
+
+                if (ResolvedType == b3_dynamicBody) ++nDyn;
+                else if (ResolvedType == b3_kinematicBody) ++nKin;
+                else ++nStat;
+
+                const bool NeedsRecreate =
+                       B3_IS_NULL(Body.m_BodyId)
+                    || Body.m_BodyHalfExtents != ScaledHalfExtents
+                    || Body.m_CachedBodyType  != ResolvedType
+                    || Body.m_CachedMass      != Mass
+                    || Body.m_CachedFriction  != ShapeProps.m_Friction
+                    || Body.m_CachedRestitution != ShapeProps.m_Restitution;
+
+                if (NeedsRecreate)
                 {
-                    if (RB.m_BodyHalfExtents == ScaledHalfExtents) return;
-                    m_Backend.DestroyBody(RB.m_BodyId);
-                    RB.m_BodyId = b3_nullBodyId;
+                    if (B3_IS_NON_NULL(Body.m_BodyId))
+                    {
+                        m_Backend.DestroyBody(Body.m_BodyId);
+                        Body.m_BodyId = b3_nullBodyId;
+                    }
+
+                    body_create_params Params;
+                    Params.m_Type           = ResolvedType;
+                    Params.m_LinearDamping  = BodyProps.m_LinearDamping;
+                    Params.m_AngularDamping = BodyProps.m_AngularDamping;
+                    Params.m_EnableSleep    = BodyProps.m_EnableSleep;
+                    Params.m_IsBullet       = BodyProps.m_EnableContinuousCollision;
+                    Params.m_Position       = T.m_Position;
+                    Params.m_Rotation       = T.m_Rotation;
+                    Params.m_HalfExtents    = ScaledHalfExtents;
+                    Params.m_Mass           = Mass;
+                    Params.m_Friction       = ShapeProps.m_Friction;
+                    Params.m_Restitution    = ShapeProps.m_Restitution;
+                    Params.m_CategoryBits   = ShapeProps.m_CategoryBits;
+                    Params.m_MaskBits       = ShapeProps.m_MaskBits;
+                    Params.m_GroupIndex     = ShapeProps.m_GroupIndex;
+                    Params.m_IsSensor       = ShapeProps.m_IsSensor;
+                    Params.m_LocalPosition  = ShapeProps.LocalPosition();
+                    Params.m_LocalRotation  = ShapeProps.LocalRotation();
+
+                    Body.m_BodyId            = m_Backend.CreateBody(Params);
+                    Body.m_BodyHalfExtents   = ScaledHalfExtents;
+                    Body.m_CachedBodyType    = ResolvedType;
+                    Body.m_CachedMass        = Mass;
+                    Body.m_CachedFriction    = ShapeProps.m_Friction;
+                    Body.m_CachedRestitution = ShapeProps.m_Restitution;
+
+                    if (B3_IS_NULL(Body.m_BodyId)) ++nNull;
+
+                    T.m_DirtyToPhysics = 0;
+                    T.m_PhysicsSyncCoolDown = xlioncore::transform::kPhysicsSyncCoolDownN;
                 }
-                RB.m_BodyId = m_Backend.CreateBody(RB.m_bDynamic, T.m_Position, T.m_Rotation, ScaledHalfExtents);
-                RB.m_BodyHalfExtents = ScaledHalfExtents;
+                else if (B3_IS_NON_NULL(Body.m_BodyId))
+                {
+                    if (T.m_DirtyToPhysics)
+                    {
+                        // Freeze fix: dynamic bodies ignore Dirty pose pushes while simulating.
+                        if (ResolvedType != b3_dynamicBody)
+                            m_Backend.SetTransform(Body.m_BodyId, T.m_Position, T.m_Rotation);
+                        else
+                            ++nDirtyIgnored;
+                        T.m_DirtyToPhysics = 0;
+                        T.m_PhysicsSyncCoolDown = xlioncore::transform::kPhysicsSyncCoolDownN;
+                    }
+                    else if (T.m_PhysicsSyncCoolDown > 0)
+                    {
+                        --T.m_PhysicsSyncCoolDown;
+                    }
+                }
+                else
+                {
+                    ++nNull;
+                }
+
+                if (pDyn && B3_IS_NON_NULL(Body.m_BodyId) && ResolvedType == b3_dynamicBody)
+                {
+                    if (pDyn->m_Force.m_X != 0.0f || pDyn->m_Force.m_Y != 0.0f || pDyn->m_Force.m_Z != 0.0f)
+                        m_Backend.ApplyForceToCenter(Body.m_BodyId, pDyn->m_Force);
+                    if (pDyn->m_Torque.m_X != 0.0f || pDyn->m_Torque.m_Y != 0.0f || pDyn->m_Torque.m_Z != 0.0f)
+                        m_Backend.ApplyTorque(Body.m_BodyId, pDyn->m_Torque);
+                    pDyn->m_Force  = {};
+                    pDyn->m_Torque = {};
+                }
             });
 
             m_Backend.Step();
 
-            // Dynamic bodies moved - pull position + rotation back into Transform
-            Foreach(S, [&](xlioncore::transform& T, rigid_body& RB) noexcept
+            Foreach(S, [&]( xlioncore::transform& T
+                          , physics_body_properties&
+                          , physics_shape_properties&
+                          , box3d_body& Body
+                          , dynamics* pDyn ) noexcept
             {
-                if (!RB.m_bDynamic) return;
-                T.m_Position = m_Backend.GetPosition(RB.m_BodyId);
-                T.m_Rotation = m_Backend.GetRotation(RB.m_BodyId);
+                if (B3_IS_NULL(Body.m_BodyId)) return;
+                if (Body.m_CachedBodyType == b3_staticBody) return;
+
+                T.m_Position = m_Backend.GetPosition(Body.m_BodyId);
+                T.m_Rotation = m_Backend.GetRotation(Body.m_BodyId);
+
+                if (T.m_Position.m_Y < yMin) yMin = T.m_Position.m_Y;
+                if (T.m_Position.m_Y > yMax) yMax = T.m_Position.m_Y;
+                if (yFirstDyn < -900.f && Body.m_CachedBodyType == b3_dynamicBody)
+                    yFirstDyn = T.m_Position.m_Y;
+
+                if (pDyn && Body.m_CachedBodyType == b3_dynamicBody)
+                {
+                    pDyn->m_LinearVelocity  = m_Backend.GetLinearVelocity(Body.m_BodyId);
+                    pDyn->m_AngularVelocity = m_Backend.GetAngularVelocity(Body.m_BodyId);
+                }
             });
+
+            if (bLog)
+            {
+                std::printf("[Physics] tick=%d ents=%d hasDyn=%d dirty=%d dirtyIgn=%d types(d/k/s)=%d/%d/%d null=%d yRange=[%.3f,%.3f] yDyn0=%.3f\n"
+                    , s_Tick, nEnt, nHasDynComp, nDirty, nDirtyIgnored, nDyn, nKin, nStat, nNull
+                    , (yMin > 1e8f ? 0.f : yMin), (yMax < -1e8f ? 0.f : yMax), yFirstDyn);
+                std::fflush(stdout);
+            }
         }
     };
 }

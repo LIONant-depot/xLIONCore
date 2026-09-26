@@ -1,4 +1,5 @@
 #include "xlioncore_physics_backend.h"
+#include <cstring>
 
 namespace xlioncore::physics
 {
@@ -13,6 +14,12 @@ namespace xlioncore::physics
         {
             return xmath::fquat{ Q.v.x, Q.v.y, Q.v.z, Q.s };
         }
+
+        bool IsIdentityLocal(const xmath::fvec3& P, const xmath::fquat& R) noexcept
+        {
+            return P.m_X == 0.0f && P.m_Y == 0.0f && P.m_Z == 0.0f
+                && R.m_X == 0.0f && R.m_Y == 0.0f && R.m_Z == 0.0f && R.m_W == 1.0f;
+        }
     }
 
     backend::backend(void) noexcept
@@ -26,20 +33,49 @@ namespace xlioncore::physics
         b3DestroyWorld(m_World);
     }
 
-    b3BodyId backend::CreateBody( bool bDynamic
-                                , const xmath::fvec3& Position
-                                , const xmath::fquat& Rotation
-                                , const xmath::fvec3& HalfExtents ) noexcept
+    b3BodyId backend::CreateBody(const body_create_params& Params) noexcept
     {
         b3BodyDef BodyDef = b3DefaultBodyDef();
-        BodyDef.type     = bDynamic ? b3_dynamicBody : b3_staticBody;
-        BodyDef.position = { Position.m_X, Position.m_Y, Position.m_Z };
-        BodyDef.rotation = ToB3(Rotation);
-        const b3BodyId BodyId = b3CreateBody(m_World, &BodyDef);
+        BodyDef.type           = Params.m_Type;
+        BodyDef.position       = { Params.m_Position.m_X, Params.m_Position.m_Y, Params.m_Position.m_Z };
+        BodyDef.rotation       = ToB3(Params.m_Rotation);
+        BodyDef.linearDamping  = Params.m_LinearDamping;
+        BodyDef.angularDamping = Params.m_AngularDamping;
+        BodyDef.enableSleep    = Params.m_EnableSleep;
+        BodyDef.isBullet       = Params.m_IsBullet;
+        const b3BodyId BodyId  = b3CreateBody(m_World, &BodyDef);
 
         b3ShapeDef ShapeDef = b3DefaultShapeDef();
-        b3BoxHull  Hull     = b3MakeBoxHull(HalfExtents.m_X, HalfExtents.m_Y, HalfExtents.m_Z);
-        b3CreateHullShape(BodyId, &ShapeDef, &Hull.base);
+        // Density is off-core for mass authority; keep a positive value so Box3D can still build
+        // shape mass props when we later scale via SetMassData. Static/kinematic: density 0.
+        ShapeDef.density                    = (Params.m_Type == b3_dynamicBody)
+                                            ? ((Params.m_Mass > 0.0f) ? 1.0f : Params.m_Density)
+                                            : 0.0f;
+        ShapeDef.baseMaterial.friction      = Params.m_Friction;
+        ShapeDef.baseMaterial.restitution   = Params.m_Restitution;
+        ShapeDef.filter.categoryBits        = Params.m_CategoryBits;
+        ShapeDef.filter.maskBits            = Params.m_MaskBits;
+        ShapeDef.filter.groupIndex          = Params.m_GroupIndex;
+        ShapeDef.isSensor                   = Params.m_IsSensor;
+        ShapeDef.updateBodyMass             = true;
+
+        if (IsIdentityLocal(Params.m_LocalPosition, Params.m_LocalRotation))
+        {
+            b3BoxHull Hull = b3MakeBoxHull(Params.m_HalfExtents.m_X, Params.m_HalfExtents.m_Y, Params.m_HalfExtents.m_Z);
+            b3CreateHullShape(BodyId, &ShapeDef, &Hull.base);
+        }
+        else
+        {
+            b3Transform Local{};
+            Local.p = { Params.m_LocalPosition.m_X, Params.m_LocalPosition.m_Y, Params.m_LocalPosition.m_Z };
+            Local.q = ToB3(Params.m_LocalRotation);
+            b3BoxHull Hull = b3MakeTransformedBoxHull(
+                Params.m_HalfExtents.m_X, Params.m_HalfExtents.m_Y, Params.m_HalfExtents.m_Z, Local);
+            b3CreateHullShape(BodyId, &ShapeDef, &Hull.base);
+        }
+
+        if (Params.m_Type == b3_dynamicBody && Params.m_Mass > 0.0f)
+            SetMass(BodyId, Params.m_Mass);
 
         return BodyId;
     }
@@ -62,9 +98,42 @@ namespace xlioncore::physics
         return FromB3(b3Body_GetRotation(BodyId));
     }
 
+    xmath::fvec3 backend::GetLinearVelocity(b3BodyId BodyId) const noexcept
+    {
+        const b3Vec3 V = b3Body_GetLinearVelocity(BodyId);
+        return { V.x, V.y, V.z };
+    }
+
+    xmath::fvec3 backend::GetAngularVelocity(b3BodyId BodyId) const noexcept
+    {
+        const b3Vec3 V = b3Body_GetAngularVelocity(BodyId);
+        return { V.x, V.y, V.z };
+    }
+
     void backend::SetTransform(b3BodyId BodyId, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept
     {
         b3Body_SetTransform(BodyId, { Position.m_X, Position.m_Y, Position.m_Z }, ToB3(Rotation));
+    }
+
+    void backend::SetMass(b3BodyId BodyId, float Mass) noexcept
+    {
+        if (Mass <= 0.0f) return;
+        b3MassData Data = b3Body_GetMassData(BodyId);
+        const float OldMass = Data.mass;
+        if (OldMass > 1.0e-6f)
+            Data.inertia = b3MulSM(Mass / OldMass, Data.inertia);
+        Data.mass = Mass;
+        b3Body_SetMassData(BodyId, Data);
+    }
+
+    void backend::ApplyForceToCenter(b3BodyId BodyId, const xmath::fvec3& Force) noexcept
+    {
+        b3Body_ApplyForceToCenter(BodyId, { Force.m_X, Force.m_Y, Force.m_Z }, true);
+    }
+
+    void backend::ApplyTorque(b3BodyId BodyId, const xmath::fvec3& Torque) noexcept
+    {
+        b3Body_ApplyTorque(BodyId, { Torque.m_X, Torque.m_Y, Torque.m_Z }, true);
     }
 
     void backend::DestroyBody(b3BodyId BodyId) noexcept

@@ -6,6 +6,7 @@
 // Eligible for Add Component (non-internal SHARE with m_pPropertyTable) so Save-as-template
 // and drag-instantiate can be exercised. Not a production game type.
 #include "dependencies/xECSV2/src/xecs.h"
+#include "plugins/xscript_module.plugin/source/Runtime/xscript_registration.h"
 
 namespace xlioncore
 {
@@ -42,7 +43,7 @@ namespace xlioncore
         , obj_member<"Enabled",  &demo_share::m_bEnabled>
         )
     };
-    XPROPERTY_REG(demo_share)
+    XSCRIPT_REGISTER_COMPONENT(demo_share, "Demo", 100)
 }
 
 #endif // XLIONCORE_DEMO_SHARE_H

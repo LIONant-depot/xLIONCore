@@ -7,12 +7,13 @@
 // every query/entity-creation call also runs in.
 #include "xlioncore_physics_system.h"
 #include "../transform/xlioncore_transform.h"
+#include "../demo/xlioncore_demo_share.h"
 #include "xecs_plugin_api.h"
 
 extern "C" __declspec(dllexport)
 void XecsPlugin_RegisterComponents(xecs::game_mgr::instance& GameMgr, xecs::plugin::token Token) noexcept
 {
-    GameMgr.RegisterComponents<xlioncore::transform, xlioncore::physics::rigid_body>(Token);
+    GameMgr.RegisterComponents<xlioncore::transform, xlioncore::physics::rigid_body, xlioncore::demo_share>(Token);
 }
 
 extern "C" __declspec(dllexport)

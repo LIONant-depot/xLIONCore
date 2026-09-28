@@ -116,7 +116,7 @@ namespace xlioncore
         )
     };
     // Inspector: Transform category, priority 0 = top of entity inspector.
-    XSCRIPT_REGISTER_COMPONENT(transform, "Transform", 0)
+    XSCRIPT_REGISTER_COMPONENT(transform, "Basics", 0)
 }
 
 #endif // XLIONCORE_TRANSFORM_H

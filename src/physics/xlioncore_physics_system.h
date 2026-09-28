@@ -3,7 +3,7 @@
 #pragma once
 
 // Physics system V1 follow-up + freeze fix:
-//   Body create uses dynamics presence + IsKinematic + Mass.
+//   Body create uses dynamics presence + static_tag presence + Mass.
 //   Dynamic bodies: physics is authoritative while simulating - ignore DirtyToPhysics
 //   pose pushes (inspector/gizmo property writers MarkDirty; pushing that back into Box3D
 //   every frame was resetting the pose => frozen crates).
@@ -14,6 +14,7 @@
 #include "xlioncore_physics.h"
 #include "xlioncore_physics_backend.h"
 #include "../transform/xlioncore_transform.h"
+#include "../tags/xlioncore_tags.h"
 #include <cstdio>
 
 namespace xlioncore::physics
@@ -21,12 +22,18 @@ namespace xlioncore::physics
     struct system : xecs::system::instance
     {
         constexpr static auto typedef_v = xecs::system::type::update{ .m_pName = "Physics" };
+        // What OnUpdate actually touches (const = read only). optional<> entries don't affect matching -
+        // they're reached through an optional Foreach pointer / hasComponents inside OnUpdate.
         using query = std::tuple
             < xecs::query::must
                 < xlioncore::transform
-                , physics_body_properties
-                , physics_shape_properties
+                , const physics_body_properties
+                , const physics_shape_properties
                 , box3d_body
+                >
+            , xecs::query::optional
+                < dynamics
+                , const xlioncore::static_tag
                 >
             >;
 
@@ -34,10 +41,10 @@ namespace xlioncore::physics
 
         system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
-        static b3BodyType ResolveBodyType(const dynamics* pDyn, bool IsKinematic) noexcept
+        static b3BodyType ResolveBodyType(const dynamics* pDyn, bool bIsStatic) noexcept
         {
             if (pDyn) return b3_dynamicBody;
-            return IsKinematic ? b3_kinematicBody : b3_staticBody;
+            return bIsStatic ? b3_staticBody : b3_kinematicBody;
         }
 
         void OnUpdate(void) noexcept
@@ -59,7 +66,8 @@ namespace xlioncore::physics
             float yMin = 1e9f, yMax = -1e9f;
             float yFirstDyn = -999.f;
 
-            Foreach(S, [&]( xlioncore::transform& T
+            Foreach(S, [&]( const xecs::component::entity& Ent
+                          , xlioncore::transform& T
                           , physics_body_properties& BodyProps
                           , physics_shape_properties& ShapeProps
                           , box3d_body& Body
@@ -69,8 +77,15 @@ namespace xlioncore::physics
                 if (pDyn) ++nHasDynComp;
                 if (T.m_DirtyToPhysics) ++nDirty;
 
+                // xecs::component::type::TAG components (static_tag) can't appear as a Foreach
+                // parameter at all (assert_standard_function_v's own static_assert - they carry no
+                // per-entity storage to hand back a pointer to), unlike DATA/SHARE components like
+                // dynamics above. hasComponents<T> is the public presence check that works for any
+                // component kind, TAG included.
+                const bool bIsStatic = hasComponents<xlioncore::static_tag>(Ent);
+
                 const xmath::fvec3 ScaledHalfExtents = T.m_Scale * 0.5f;
-                const b3BodyType   ResolvedType      = ResolveBodyType(pDyn, BodyProps.m_IsKinematic);
+                const b3BodyType   ResolvedType      = ResolveBodyType(pDyn, bIsStatic);
                 const float        Mass              = pDyn ? pDyn->m_Mass : 0.0f;
 
                 if (ResolvedType == b3_dynamicBody) ++nDyn;

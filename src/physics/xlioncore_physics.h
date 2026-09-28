@@ -3,10 +3,14 @@
 #pragma once
 
 // Physics component organization V1 follow-up (Box3D):
-//   transform (existing, DirtyToPhysics/CoolDown) + physics_body_properties (SHARE, IsKinematic)
+//   transform (existing, DirtyToPhysics/CoolDown) + physics_body_properties (SHARE)
 //   + physics_shape_properties (SHARE) + box3d_body (DATA UNIQUE runtime handle)
 //   + dynamics (DATA UNIQUE; Dynamic bodies only - mass/force/torque/vel readback).
-// Body typing: has dynamics => Dynamic; else IsKinematic => Kinematic; else Static.
+// Body typing: has dynamics => Dynamic; else xlioncore::static_tag => Static; else Kinematic
+// (the default - see xlioncore_tags.h and ResolveBodyType in xlioncore_physics_system.h). Not a
+// bool flag here anymore: static is a cross-cutting concept (rendering/navmesh/occlusion culling
+// care about it too, not just physics), so it lives as its own tag component, not a
+// physics_body_properties field.
 // Mass lives only on dynamics (authoritative); density is off-core (future material).
 //
 // SHARE keys: zero-init explicit pads (DemoShare lesson) so default HashBytes(sizeof(T)) is stable.
@@ -19,8 +23,7 @@
 
 namespace xlioncore::physics
 {
-    // Authored body flags. IsKinematic only applies when the entity has NO dynamics
-    // (has dynamics => always Dynamic in Box3D). Layout packs to 16 bytes with pads.
+    // Authored body flags. Layout packs to 12 bytes with pads.
     struct physics_body_properties
     {
         constexpr static auto typedef_v = xecs::component::type::share
@@ -28,16 +31,14 @@ namespace xlioncore::physics
         , .m_pName = "PhysicsBodyProperties"
         };
 
-        bool            m_IsKinematic                = false;
         bool            m_EnableSleep                = true;
         bool            m_EnableContinuousCollision  = false;
-        std::uint8_t    m_Pad0[5]                    = {};
+        std::uint8_t    m_Pad0[2]                    = {};
         float           m_LinearDamping              = 0.0f;
         float           m_AngularDamping             = 0.0f;
 
         XPROPERTY_DEF
         ( "PhysicsBodyProperties", physics_body_properties
-        , obj_member<"IsKinematic",               &physics_body_properties::m_IsKinematic>
         , obj_member<"LinearDamping",             &physics_body_properties::m_LinearDamping>
         , obj_member<"AngularDamping",            &physics_body_properties::m_AngularDamping>
         , obj_member<"EnableSleep",               &physics_body_properties::m_EnableSleep>
@@ -45,7 +46,7 @@ namespace xlioncore::physics
         )
     };
     XSCRIPT_REGISTER_COMPONENT(physics_body_properties, "Physics", 10)
-    static_assert(sizeof(physics_body_properties) == 16);
+    static_assert(sizeof(physics_body_properties) == 12);
 
     // V1 inlined shape. Density kept for future physics material but is NOT mass authority.
     // Plain floats for local pose avoid fvec3/fquat alignment padding.
@@ -142,8 +143,22 @@ namespace xlioncore::physics
         float           m_CachedFriction    = 0.0f;
         float           m_CachedRestitution = 0.0f;
 
+        // Read-only, not hidden: not being editable doesn't mean not worth seeing - this component
+        // exists partly for debugging, so the live handle/cache is exposed via SHOW_READONLY instead
+        // of an empty property table (direct user note: "just because something is not meant to be
+        // edited does not mean that we should hide it from the user"). m_BodyId's fields are surfaced
+        // individually (BodyIndex/BodyGeneration) since b3BodyId itself isn't a registered xproperty
+        // type; B3_IS_NULL/B3_IS_NON_NULL both key off index1 == 0, so that alone already tells you
+        // whether a real Box3D body exists for this entity.
         XPROPERTY_DEF
         ( "Box3dBody", box3d_body
+        , obj_member<"BodyIndex",         +[](box3d_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_BodyId.index1); },      member_flags<flags::SHOW_READONLY>>
+        , obj_member<"BodyGeneration",    +[](box3d_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_BodyId.generation); },   member_flags<flags::SHOW_READONLY>>
+        , obj_member<"CachedBodyType",    +[](box3d_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_CachedBodyType); }, member_flags<flags::SHOW_READONLY>> // 0=static 1=kinematic 2=dynamic (b3BodyType)
+        , obj_member<"BodyHalfExtents",   &box3d_body::m_BodyHalfExtents,   member_flags<flags::SHOW_READONLY>>
+        , obj_member<"CachedMass",        &box3d_body::m_CachedMass,        member_flags<flags::SHOW_READONLY>>
+        , obj_member<"CachedFriction",    &box3d_body::m_CachedFriction,    member_flags<flags::SHOW_READONLY>>
+        , obj_member<"CachedRestitution", &box3d_body::m_CachedRestitution, member_flags<flags::SHOW_READONLY>>
         )
     };
     XSCRIPT_REGISTER_COMPONENT(box3d_body, "Physics", 40)

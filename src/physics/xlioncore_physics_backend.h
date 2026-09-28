@@ -48,6 +48,7 @@ namespace xlioncore::physics
         void         SetMass            (b3BodyId BodyId, float Mass) noexcept;
         void         ApplyForceToCenter (b3BodyId BodyId, const xmath::fvec3& Force) noexcept;
         void         ApplyTorque        (b3BodyId BodyId, const xmath::fvec3& Torque) noexcept;
+        void         DisableBody        (b3BodyId BodyId) noexcept;
         void         DestroyBody        (b3BodyId BodyId) noexcept;
 
     private:

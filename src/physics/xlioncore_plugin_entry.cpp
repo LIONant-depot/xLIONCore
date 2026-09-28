@@ -10,6 +10,9 @@
 using physics_system = xlioncore::physics::system;
 XSCRIPT_REGISTER_SYSTEM(physics_system)
 
+using physics_destroy_notify = xlioncore::physics::destroy_notify;
+XSCRIPT_REGISTER_SYSTEM(physics_destroy_notify)
+
 extern "C" __declspec(dllexport)
 void XecsPlugin_RegisterComponents(xecs::game_mgr::instance& GameMgr, xecs::plugin::token Token) noexcept
 {

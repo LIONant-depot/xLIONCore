@@ -136,6 +136,12 @@ namespace xlioncore::physics
         b3Body_ApplyTorque(BodyId, { Torque.m_X, Torque.m_Y, Torque.m_Z }, true);
     }
 
+    void backend::DisableBody(b3BodyId BodyId) noexcept
+    {
+        if (B3_IS_NON_NULL(BodyId))
+            b3Body_Disable(BodyId);
+    }
+
     void backend::DestroyBody(b3BodyId BodyId) noexcept
     {
         if (B3_IS_NON_NULL(BodyId))

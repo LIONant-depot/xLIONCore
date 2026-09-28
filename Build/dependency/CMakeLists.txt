@@ -1,4 +1,4 @@
-include(${CMAKE_BINARY_DIR}/_deps/xcmake_tools/Common.cmake)
+﻿include(${CMAKE_BINARY_DIR}/_deps/xcmake_tools/Common.cmake)
 
 # Defensive - FetchAndPopulate is idempotent, a no-op if the host project already fetched this (xLION's
 # own top-level CMakeLists.txt already does).
@@ -26,7 +26,7 @@ FetchContent_MakeAvailable(box3d)
 # src/physics/*.cpp: the first non-ECS engine system, proving xLIONCore is a real home for more than
 # just the ECS. Self-registers via XecsPlugin_RegisterComponents/RegisterSystems (see
 # xlioncore_plugin_entry.cpp's own comment) - the same ABI Game.dll already uses - so both
-# registration and every query/entity-creation call for rigid_body/system are compiled into THIS DLL;
+# registration and every query/entity-creation call for physics_body_properties/system are compiled into THIS DLL;
 # xLION.exe never includes these headers.
 add_library(xLIONCore SHARED
   "${CMAKE_SOURCE_DIR}/dependencies/xECSV2/src/xecs.cpp"
@@ -56,3 +56,22 @@ target_link_libraries(xLIONCore PRIVATE box3d::box3d)
 if(WIN32)
   target_link_libraries(xLIONCore PRIVATE Advapi32.lib)
 endif()
+
+# Every OTHER header under src/ (xlioncore_transform.h, xlioncore_physics.h,
+# xlioncore_physics_backend.h, xlioncore_physics_system.h, xlioncore_demo_share.h, ...) was never
+# listed above - only the .cpp files that actually compile into this DLL were - so none of it was
+# visible in xLIONCore's own Visual Studio project (direct user report: "if I go to xlion_core I
+# still can not see its relevant headers like the transform component"). GLOB_RECURSE here (not a
+# hand-maintained list, unlike add_library's own source list above) is deliberate: this is IDE
+# browsability only, never build correctness, so a new header just needs one reconfigure to appear.
+file(GLOB_RECURSE XLIONCORE_HEADERS CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/*.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/*.hpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/*.inl"
+)
+target_sources(xLIONCore PRIVATE ${XLIONCORE_HEADERS})
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/../../src" PREFIX "src"
+  FILES ${XLIONCORE_HEADERS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_physics_backend.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_plugin_entry.cpp"
+)

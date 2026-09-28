@@ -42,6 +42,21 @@ namespace xlioncore
             m_PhysicsSyncCoolDown = kPhysicsSyncCoolDownN;
         }
 
+        inline void             setPosition         (const xmath::fvec3& V )            noexcept { m_Position     = V; MarkDirtyToPhysics(); }
+        inline void             setPositionX        (const float X)                     noexcept { m_Position.m_X = X; MarkDirtyToPhysics(); }
+        inline void             setPositionY        (const float Y)                     noexcept { m_Position.m_Y = Y; MarkDirtyToPhysics(); }
+        inline void             setPositionZ        (const float Z)                     noexcept { m_Position.m_Z = Z; MarkDirtyToPhysics(); }
+        inline void             setRotation         (const xmath::fquat& Q )            noexcept { m_Rotation     = Q; MarkDirtyToPhysics(); }
+        inline xmath::radian3   getEditorRotation   (void)                              noexcept { if ( xmath::Abs(m_Rotation.Dot(m_EditorRotation)) < 0.9999 ){ m_EditorRotation = m_Rotation.ToEuler();} return m_EditorRotation;}
+        inline void             setRoll             (const xmath::radian Angle)         noexcept { auto R = getEditorRotation(); R.m_Roll  = Angle; setRotation(R); }
+        inline void             setPitch            (const xmath::radian Angle)         noexcept { auto R = getEditorRotation(); R.m_Pitch = Angle; setRotation(R); }
+        inline void             setYaw              (const xmath::radian Angle)         noexcept { auto R = getEditorRotation(); R.m_Yaw   = Angle; setRotation(R); }
+        inline void             setRotation         (const xmath::radian3& Radian3)     noexcept { m_EditorRotation          = Radian3; setRotation(xmath::fquat{m_EditorRotation}); }
+        inline void             setScale            (const xmath::fvec3& V )            noexcept { m_Scale     = V; MarkDirtyToPhysics(); }
+        inline void             setScaleX           (const float X)                     noexcept { m_Scale.m_X = X; MarkDirtyToPhysics(); }
+        inline void             setScaleY           (const float Y)                     noexcept { m_Scale.m_Y = Y; MarkDirtyToPhysics(); }
+        inline void             setScaleZ           (const float Z)                     noexcept { m_Scale.m_Z = Z; MarkDirtyToPhysics(); }
+
         // EditorRotationDegrees: ZXY roll-pitch-yaw in degrees (X=pitch, Y=yaw, Z=roll).
         // Position/Scale/RotationDegrees writers call MarkDirtyToPhysics so editor edits push to Box3D.
         XPROPERTY_DEF
@@ -50,67 +65,52 @@ namespace xlioncore
             , obj_member<"X", +[](transform& O, bool bRead, float& V)
                 {
                     if (bRead) V = O.m_Position.m_X;
-                    else { O.m_Position.m_X = V; O.MarkDirtyToPhysics(); }
+                    else O.setPositionX(V);
                 }>
             , obj_member<"Y", +[](transform& O, bool bRead, float& V)
                 {
                     if (bRead) V = O.m_Position.m_Y;
-                    else { O.m_Position.m_Y = V; O.MarkDirtyToPhysics(); }
+                    else O.setPositionY(V);
                 }>
             , obj_member<"Z", +[](transform& O, bool bRead, float& V)
                 {
                     if (bRead) V = O.m_Position.m_Z;
-                    else { O.m_Position.m_Z = V; O.MarkDirtyToPhysics(); }
+                    else O.setPositionZ(V);
                 }>
             >
         , obj_member<"Rotation", &transform::m_Rotation, member_flags<flags::DONT_SHOW>>
         , obj_scope<"RotationDegrees", xproperty::settings::vector3_group
             , obj_member<"X", +[](transform& O, bool bRead, float& V)
                 {
-                    if (bRead) V = xmath::RadToDeg(O.m_EditorRotation.m_Pitch.m_Value);
-                    else
-                    {
-                        O.m_EditorRotation.m_Pitch = xmath::radian{ xmath::DegToRad(V) };
-                        O.m_Rotation = xmath::fquat(O.m_EditorRotation);
-                        O.MarkDirtyToPhysics();
-                    }
+                    if (bRead) V = xmath::RadToDeg(O.getEditorRotation().m_Pitch.m_Value);
+                    else       O.setPitch(xmath::radian{ xmath::DegToRad(V) });
                 }>
             , obj_member<"Y", +[](transform& O, bool bRead, float& V)
                 {
-                    if (bRead) V = xmath::RadToDeg(O.m_EditorRotation.m_Yaw.m_Value);
-                    else
-                    {
-                        O.m_EditorRotation.m_Yaw = xmath::radian{ xmath::DegToRad(V) };
-                        O.m_Rotation = xmath::fquat(O.m_EditorRotation);
-                        O.MarkDirtyToPhysics();
-                    }
+                    if (bRead) V = xmath::RadToDeg(O.getEditorRotation().m_Yaw.m_Value);
+                    else       O.setYaw(xmath::radian{ xmath::DegToRad(V) });
                 }>
             , obj_member<"Z", +[](transform& O, bool bRead, float& V)
                 {
-                    if (bRead) V = xmath::RadToDeg(O.m_EditorRotation.m_Roll.m_Value);
-                    else
-                    {
-                        O.m_EditorRotation.m_Roll = xmath::radian{ xmath::DegToRad(V) };
-                        O.m_Rotation = xmath::fquat(O.m_EditorRotation);
-                        O.MarkDirtyToPhysics();
-                    }
+                    if (bRead) V = xmath::RadToDeg(O.getEditorRotation().m_Roll.m_Value);
+                    else       O.setRoll(xmath::radian{ xmath::DegToRad(V) });
                 }>
             >
         , obj_scope<"Scale", xproperty::settings::vector3_group
             , obj_member<"X", +[](transform& O, bool bRead, float& V)
                 {
                     if (bRead) V = O.m_Scale.m_X;
-                    else { O.m_Scale.m_X = V; O.MarkDirtyToPhysics(); }
+                    else O.setScaleX(V);
                 }>
             , obj_member<"Y", +[](transform& O, bool bRead, float& V)
                 {
                     if (bRead) V = O.m_Scale.m_Y;
-                    else { O.m_Scale.m_Y = V; O.MarkDirtyToPhysics(); }
+                    else O.setScaleY(V);
                 }>
             , obj_member<"Z", +[](transform& O, bool bRead, float& V)
                 {
                     if (bRead) V = O.m_Scale.m_Z;
-                    else { O.m_Scale.m_Z = V; O.MarkDirtyToPhysics(); }
+                    else O.setScaleZ(V);
                 }>
             >
         )

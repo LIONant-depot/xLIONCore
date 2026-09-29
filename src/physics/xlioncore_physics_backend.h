@@ -45,10 +45,17 @@ namespace xlioncore::physics
         xmath::fvec3 GetLinearVelocity  (b3BodyId BodyId) const noexcept;
         xmath::fvec3 GetAngularVelocity (b3BodyId BodyId) const noexcept;
         void         SetTransform       (b3BodyId BodyId, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept;
+        void         SetLinearVelocity  (b3BodyId BodyId, const xmath::fvec3& Velocity) noexcept;
+        void         SetAngularVelocity (b3BodyId BodyId, const xmath::fvec3& Velocity) noexcept;
+        void         SetAwake           (b3BodyId BodyId, bool Awake) noexcept;
         void         SetMass            (b3BodyId BodyId, float Mass) noexcept;
         void         ApplyForceToCenter (b3BodyId BodyId, const xmath::fvec3& Force) noexcept;
         void         ApplyTorque        (b3BodyId BodyId, const xmath::fvec3& Torque) noexcept;
-        void         DisableBody        (b3BodyId BodyId) noexcept;
+        // Zeros every shape's collision filter on this body (category+mask), so a raycast/overlap
+        // query issued in the window between a kill and its deferred DestroyBody won't match it -
+        // best-effort (same locked-world no-op as everything else here), not a substitute for a
+        // query result checking Entity.isZombie() once queries actually exist in this engine.
+        void         MakeBodyUnqueryable(b3BodyId BodyId) noexcept;
         void         DestroyBody        (b3BodyId BodyId) noexcept;
 
     private:

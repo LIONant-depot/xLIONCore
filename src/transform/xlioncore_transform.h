@@ -5,8 +5,8 @@
 // World-space Transform shared by physics + render. No hierarchy this pass - pose is always
 // world. Registered by LIONCore.dll (xlioncore_plugin_entry.cpp); xLIONRender SyncLocalBitIDs's it.
 //
-// Physics sync (V1 follow-up): m_DirtyToPhysics + m_PhysicsSyncCoolDown. Editor/gameplay pose
-// edits set Dirty=1 and CoolDown=N via MarkDirtyToPhysics(). Physics Box3D->ECS writeback must NEVER set Dirty. No physics_teleportation_tag.
+// Physics sync (V1 follow-up): m_DirtyToPhysics. Editor/gameplay pose edits set Dirty=1 via
+// MarkDirtyToPhysics(). Physics Box3D->ECS writeback must NEVER set Dirty. No physics_teleportation_tag.
 // Dynamic bodies ignore DirtyToPhysics pushes while the physics system is simulating (inspector/gizmo
 // MarkDirty was resetting Box3D every frame and freezing crates). Kinematic/Static still honor Dirty.
 #include "dependencies/xECSV2/src/xecs.h"
@@ -17,9 +17,6 @@ namespace xlioncore
 {
     struct transform
     {
-        // CoolDown ticks to re-arm after a Dirty push (physics ticks). Start N in 4..8.
-        static constexpr std::uint8_t kPhysicsSyncCoolDownN = 6;
-
         // Stable GUID so the type identity survives renames / TU moves (default would hash
         // __FUNCSIG__). m_Guid must precede m_pName (declaration order of type::data).
         constexpr static auto typedef_v = xecs::component::type::data
@@ -32,14 +29,12 @@ namespace xlioncore
         xmath::fvec3    m_Scale                 = xmath::fvec3::fromOne();
         xmath::radian3  m_EditorRotation        = {};
 
-        // ECS -> Box3D dirty/cooldown (bitfield). Physics writeback never touches these.
+        // ECS -> Box3D dirty flag. Physics writeback never touches this.
         std::uint8_t    m_DirtyToPhysics        : 1 = 0;
-        std::uint8_t    m_PhysicsSyncCoolDown   : 7 = 0;
 
         void MarkDirtyToPhysics(void) noexcept
         {
-            m_DirtyToPhysics      = 1;
-            m_PhysicsSyncCoolDown = kPhysicsSyncCoolDownN;
+            m_DirtyToPhysics = 1;
         }
 
         inline void             setPosition         (const xmath::fvec3& V )            noexcept { m_Position     = V; MarkDirtyToPhysics(); }

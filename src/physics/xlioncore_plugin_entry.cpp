@@ -2,6 +2,7 @@
 // XScript_GetComponentDisplayInfo so the editor can sort/filter inspector categories/priorities.
 // Components/systems announce via XSCRIPT_REGISTER_* in their headers; this TU walks the lists.
 #include "xlioncore_physics_system.h"
+#include "xlioncore_physics_api.h"
 #include "../transform/xlioncore_transform.h"
 #include "../demo/xlioncore_demo_share.h"
 #include "xecs_plugin_api.h"
@@ -50,4 +51,24 @@ void XScript_GetComponentDisplayInfo(xscript::pfn_component_display_visitor pVis
 {
     for (auto* p = xscript::self_registration<xscript::component_entry>::s_pHead; p; p = p->m_pNext)
         pVisitor(pUserData, p->m_Value.m_Guid, p->m_Value.m_pName, p->m_Value.m_pCategory, p->m_Value.m_Priority);
+}
+
+namespace xlioncore::physics
+{
+    bool TeleportDynamicBody
+    ( xecs::game_mgr::instance&  GameMgr
+    , xecs::component::entity    Entity
+    , const xmath::fvec3&        Position
+    , const xmath::fquat&        Rotation
+    ) noexcept
+    {
+        auto* pSystem = GameMgr.getUserData<system>();
+        if (!pSystem) return false;
+
+        auto* pBody = GetComponentPtr<box3d_body>(GameMgr, Entity);
+        if (!pBody || pBody->m_CachedBodyType != b3_dynamicBody) return false;
+
+        pSystem->TeleportBody(*pBody, Position, Rotation);
+        return true;
+    }
 }

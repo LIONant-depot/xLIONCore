@@ -1,5 +1,6 @@
 #include "xlioncore_physics_backend.h"
 #include <cstring>
+#include <array>
 
 namespace xlioncore::physics
 {
@@ -115,6 +116,21 @@ namespace xlioncore::physics
         b3Body_SetTransform(BodyId, { Position.m_X, Position.m_Y, Position.m_Z }, ToB3(Rotation));
     }
 
+    void backend::SetLinearVelocity(b3BodyId BodyId, const xmath::fvec3& Velocity) noexcept
+    {
+        b3Body_SetLinearVelocity(BodyId, { Velocity.m_X, Velocity.m_Y, Velocity.m_Z });
+    }
+
+    void backend::SetAngularVelocity(b3BodyId BodyId, const xmath::fvec3& Velocity) noexcept
+    {
+        b3Body_SetAngularVelocity(BodyId, { Velocity.m_X, Velocity.m_Y, Velocity.m_Z });
+    }
+
+    void backend::SetAwake(b3BodyId BodyId, bool Awake) noexcept
+    {
+        b3Body_SetAwake(BodyId, Awake);
+    }
+
     void backend::SetMass(b3BodyId BodyId, float Mass) noexcept
     {
         if (Mass <= 0.0f) return;
@@ -136,10 +152,15 @@ namespace xlioncore::physics
         b3Body_ApplyTorque(BodyId, { Torque.m_X, Torque.m_Y, Torque.m_Z }, true);
     }
 
-    void backend::DisableBody(b3BodyId BodyId) noexcept
+    void backend::MakeBodyUnqueryable(b3BodyId BodyId) noexcept
     {
-        if (B3_IS_NON_NULL(BodyId))
-            b3Body_Disable(BodyId);
+        if (B3_IS_NULL(BodyId)) return;
+
+        std::array<b3ShapeId, 8> Shapes;
+        const int Count = b3Body_GetShapes(BodyId, Shapes.data(), static_cast<int>(Shapes.size()));
+        const b3Filter Filter{ .categoryBits = 0, .maskBits = 0, .groupIndex = 0 };
+        for (int i = 0; i < Count; ++i)
+            b3Shape_SetFilter(Shapes[i], Filter, false);
     }
 
     void backend::DestroyBody(b3BodyId BodyId) noexcept

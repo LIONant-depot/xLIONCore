@@ -51,7 +51,7 @@ target_include_directories(xLIONCore PRIVATE
   "${CMAKE_SOURCE_DIR}/dependencies/xmath"
   "${CMAKE_SOURCE_DIR}/dependencies/xbits"
 )
-target_compile_definitions(xLIONCore PRIVATE XECS_BUILD_SHARED XECS_EXPORTS)
+target_compile_definitions(xLIONCore PRIVATE XECS_BUILD_SHARED XECS_EXPORTS XLIONCORE_BUILD_SHARED XLIONCORE_EXPORTS)
 target_link_libraries(xLIONCore PRIVATE box3d::box3d)
 if(WIN32)
   target_link_libraries(xLIONCore PRIVATE Advapi32.lib)

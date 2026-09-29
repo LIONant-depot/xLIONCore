@@ -44,6 +44,7 @@ namespace xlioncore::physics
         BodyDef.angularDamping = Params.m_AngularDamping;
         BodyDef.enableSleep    = Params.m_EnableSleep;
         BodyDef.isBullet       = Params.m_IsBullet;
+        BodyDef.userData       = reinterpret_cast<void*>(static_cast<std::uintptr_t>(Params.m_UserData));
         const b3BodyId BodyId  = b3CreateBody(m_World, &BodyDef);
 
         b3ShapeDef ShapeDef = b3DefaultShapeDef();
@@ -129,6 +130,11 @@ namespace xlioncore::physics
     void backend::SetAwake(b3BodyId BodyId, bool Awake) noexcept
     {
         b3Body_SetAwake(BodyId, Awake);
+    }
+
+    void backend::SetBodyType(b3BodyId BodyId, b3BodyType Type) noexcept
+    {
+        b3Body_SetType(BodyId, Type);
     }
 
     void backend::SetMass(b3BodyId BodyId, float Mass) noexcept

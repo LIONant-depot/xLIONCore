@@ -3,7 +3,7 @@
 #pragma once
 
 // Persistent b3WorldId behind a plain class - no xecs types. Creates multi-shape-ready bodies
-// (body first, then hull shape); mass from dynamics (SetMassData) when m_Mass > 0, else shapes.
+// (body first, then hull shape); mass from physics_dynamics (SetMassData) when m_Mass > 0, else shapes.
 #include "dependencies/xmath/source/xmath.h"
 #include <box3d/box3d.h>
 #include <cstdint>
@@ -30,6 +30,7 @@ namespace xlioncore::physics
         bool            m_IsSensor          = false;
         xmath::fvec3    m_LocalPosition     = {};
         xmath::fquat    m_LocalRotation     = xmath::fquat::fromIdentity();
+        std::uint64_t   m_UserData          = 0;      // The owning entity's handle - maps a Box3D body back to its entity
     };
 
     class backend
@@ -49,6 +50,7 @@ namespace xlioncore::physics
         void         SetAngularVelocity (b3BodyId BodyId, const xmath::fvec3& Velocity) noexcept;
         void         SetAwake           (b3BodyId BodyId, bool Awake) noexcept;
         void         SetMass            (b3BodyId BodyId, float Mass) noexcept;
+        void         SetBodyType        (b3BodyId BodyId, b3BodyType Type) noexcept;
         void         ApplyForceToCenter (b3BodyId BodyId, const xmath::fvec3& Force) noexcept;
         void         ApplyTorque        (b3BodyId BodyId, const xmath::fvec3& Torque) noexcept;
         // Zeros every shape's collision filter on this body (category+mask), so a raycast/overlap

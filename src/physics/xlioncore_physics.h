@@ -4,14 +4,14 @@
 
 // Physics component organization V1 follow-up (Box3D):
 //   transform (existing, DirtyToPhysics/CoolDown) + physics_body_properties (SHARE)
-//   + physics_shape_properties (SHARE) + box3d_body (DATA UNIQUE runtime handle)
-//   + dynamics (DATA UNIQUE; Dynamic bodies only - mass/force/torque/vel readback).
-// Body typing: has dynamics => Dynamic; else xlioncore::static_tag => Static; else Kinematic
+//   + physics_shape_properties (SHARE) + physics_body (DATA UNIQUE runtime handle)
+//   + physics_dynamics (DATA UNIQUE; Dynamic bodies only - mass/force/torque/vel readback).
+// Body typing: has physics_dynamics => Dynamic; else xlioncore::static_tag => Static; else Kinematic
 // (the default - see xlioncore_tags.h and ResolveBodyType in xlioncore_physics_system.h). Not a
 // bool flag here anymore: static is a cross-cutting concept (rendering/navmesh/occlusion culling
 // care about it too, not just physics), so it lives as its own tag component, not a
 // physics_body_properties field.
-// Mass lives only on dynamics (authoritative); density is off-core (future material).
+// Mass lives only on physics_dynamics (authoritative); density is off-core (future material).
 //
 // SHARE keys: zero-init explicit pads (DemoShare lesson) so default HashBytes(sizeof(T)) is stable.
 // Shape local pose stored as plain floats (not fvec3/fquat) to avoid alignment holes in the SHARE blob.
@@ -27,8 +27,9 @@ namespace xlioncore::physics
     struct physics_body_properties
     {
         constexpr static auto typedef_v = xecs::component::type::share
-        { .m_Guid  = xecs::component::type::guid{ "xlioncore::physics::physics_body_properties" }
-        , .m_pName = "PhysicsBodyProperties"
+        { .m_Guid     = xecs::component::type::guid{ "xlioncore::physics::physics_body_properties" }
+        , .m_pName    = "PhysicsBodyProperties"
+        , .m_bBuilder = true
         };
 
         bool            m_EnableSleep                = true;
@@ -53,8 +54,9 @@ namespace xlioncore::physics
     struct physics_shape_properties
     {
         constexpr static auto typedef_v = xecs::component::type::share
-        { .m_Guid  = xecs::component::type::guid{ "xlioncore::physics::physics_shape_properties" }
-        , .m_pName = "PhysicsShapeProperties"
+        { .m_Guid     = xecs::component::type::guid{ "xlioncore::physics::physics_shape_properties" }
+        , .m_pName    = "PhysicsShapeProperties"
+        , .m_bBuilder = true
         };
 
         float           m_Density        = 1000.0f;
@@ -103,11 +105,11 @@ namespace xlioncore::physics
 
     // DATA UNIQUE - Dynamic bodies only. Box3D->ECS velocity readback; Force/Torque consumed each step;
     // Mass is the single authoritative mass (ECS->Box3D on create/recreate / when changed).
-    struct dynamics
+    struct physics_dynamics
     {
         constexpr static auto typedef_v = xecs::component::type::data
-        { .m_Guid  = xecs::component::type::guid{ "xlioncore::physics::dynamics" }
-        , .m_pName = "dynamics"
+        { .m_Guid  = xecs::component::type::guid{ "xlioncore::physics::dynamics" }  // GUID string keeps the legacy name on purpose so saved scenes still load
+        , .m_pName = "PhysicsDynamics"
         };
 
         xmath::fvec3    m_LinearVelocity  = {};
@@ -117,23 +119,23 @@ namespace xlioncore::physics
         xmath::fvec3    m_Torque          = {};
 
         XPROPERTY_DEF
-        ( "dynamics", dynamics
-        , obj_member<"LinearVelocity",  &dynamics::m_LinearVelocity>
-        , obj_member<"AngularVelocity", &dynamics::m_AngularVelocity>
-        , obj_member<"Mass",            &dynamics::m_Mass>
-        , obj_member<"Force",           &dynamics::m_Force>
-        , obj_member<"Torque",          &dynamics::m_Torque>
+        ( "PhysicsDynamics", physics_dynamics
+        , obj_member<"LinearVelocity",  &physics_dynamics::m_LinearVelocity>
+        , obj_member<"AngularVelocity", &physics_dynamics::m_AngularVelocity>
+        , obj_member<"Mass",            &physics_dynamics::m_Mass>
+        , obj_member<"Force",           &physics_dynamics::m_Force>
+        , obj_member<"Torque",          &physics_dynamics::m_Torque>
         )
     };
-    XSCRIPT_REGISTER_COMPONENT(dynamics, "Physics", 30)
+    XSCRIPT_REGISTER_COMPONENT(physics_dynamics, "Physics", 30)
 
     // UNIQUE runtime handle (DATA). Empty property table so archetype presence round-trips;
     // BodyId / caches are runtime-only (not listed as members).
-    struct box3d_body
+    struct physics_body
     {
         constexpr static auto typedef_v = xecs::component::type::data
-        { .m_Guid  = xecs::component::type::guid{ "xlioncore::physics::box3d_body" }
-        , .m_pName = "Box3dBody"
+        { .m_Guid  = xecs::component::type::guid{ "xlioncore::physics::box3d_body" }  // GUID string keeps the legacy name on purpose so saved scenes still load
+        , .m_pName = "Physics"
         };
 
         b3BodyId        m_BodyId            = b3_nullBodyId;
@@ -151,17 +153,17 @@ namespace xlioncore::physics
         // type; B3_IS_NULL/B3_IS_NON_NULL both key off index1 == 0, so that alone already tells you
         // whether a real Box3D body exists for this entity.
         XPROPERTY_DEF
-        ( "Box3dBody", box3d_body
-        , obj_member<"BodyIndex",         +[](box3d_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_BodyId.index1); },      member_flags<flags::SHOW_READONLY>>
-        , obj_member<"BodyGeneration",    +[](box3d_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_BodyId.generation); },   member_flags<flags::SHOW_READONLY>>
-        , obj_member<"CachedBodyType",    +[](box3d_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_CachedBodyType); }, member_flags<flags::SHOW_READONLY>> // 0=static 1=kinematic 2=dynamic (b3BodyType)
-        , obj_member<"BodyHalfExtents",   &box3d_body::m_BodyHalfExtents,   member_flags<flags::SHOW_READONLY>>
-        , obj_member<"CachedMass",        &box3d_body::m_CachedMass,        member_flags<flags::SHOW_READONLY>>
-        , obj_member<"CachedFriction",    &box3d_body::m_CachedFriction,    member_flags<flags::SHOW_READONLY>>
-        , obj_member<"CachedRestitution", &box3d_body::m_CachedRestitution, member_flags<flags::SHOW_READONLY>>
+        ( "Physics", physics_body
+        , obj_member<"BodyIndex",         +[](physics_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_BodyId.index1); },      member_flags<flags::SHOW_READONLY>>
+        , obj_member<"BodyGeneration",    +[](physics_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_BodyId.generation); },   member_flags<flags::SHOW_READONLY>>
+        , obj_member<"CachedBodyType",    +[](physics_body& O, bool bRead, float& V) { if (bRead) V = static_cast<float>(O.m_CachedBodyType); }, member_flags<flags::SHOW_READONLY>> // 0=static 1=kinematic 2=dynamic (b3BodyType)
+        , obj_member<"BodyHalfExtents",   &physics_body::m_BodyHalfExtents,   member_flags<flags::SHOW_READONLY>>
+        , obj_member<"CachedMass",        &physics_body::m_CachedMass,        member_flags<flags::SHOW_READONLY>>
+        , obj_member<"CachedFriction",    &physics_body::m_CachedFriction,    member_flags<flags::SHOW_READONLY>>
+        , obj_member<"CachedRestitution", &physics_body::m_CachedRestitution, member_flags<flags::SHOW_READONLY>>
         )
     };
-    XSCRIPT_REGISTER_COMPONENT(box3d_body, "Physics", 40)
+    XSCRIPT_REGISTER_COMPONENT(physics_body, "Physics", 40)
 }
 
 #endif // XLIONCORE_PHYSICS_H

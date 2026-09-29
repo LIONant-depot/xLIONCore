@@ -14,6 +14,9 @@ XSCRIPT_REGISTER_SYSTEM(physics_system)
 using physics_destroy_notify = xlioncore::physics::destroy_notify;
 XSCRIPT_REGISTER_SYSTEM(physics_destroy_notify)
 
+using physics_body_builder = xlioncore::physics::body_builder;
+XSCRIPT_REGISTER_SYSTEM(physics_body_builder)
+
 extern "C" __declspec(dllexport)
 void XecsPlugin_RegisterComponents(xecs::game_mgr::instance& GameMgr, xecs::plugin::token Token) noexcept
 {
@@ -32,8 +35,8 @@ void XecsPlugin_RegisterSystems(xecs::game_mgr::instance& GameMgr) noexcept
         < xlioncore::transform
         , xlioncore::physics::physics_body_properties
         , xlioncore::physics::physics_shape_properties
-        , xlioncore::physics::dynamics
-        , xlioncore::physics::box3d_body
+        , xlioncore::physics::physics_dynamics
+        , xlioncore::physics::physics_body
         , xlioncore::demo_share
         >();
 
@@ -65,7 +68,7 @@ namespace xlioncore::physics
         auto* pSystem = GameMgr.getUserData<system>();
         if (!pSystem) return false;
 
-        auto* pBody = GetComponentPtr<box3d_body>(GameMgr, Entity);
+        auto* pBody = GetComponentPtr<physics_body>(GameMgr, Entity);
         if (!pBody || pBody->m_CachedBodyType != b3_dynamicBody) return false;
 
         pSystem->TeleportBody(*pBody, Position, Rotation);

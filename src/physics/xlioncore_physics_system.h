@@ -2,37 +2,18 @@
 #define XLIONCORE_PHYSICS_SYSTEM_H
 #pragma once
 
-// Physics system V1 follow-up + freeze fix + static/kinetic split:
-//   Body create uses dynamics presence + static_tag presence + Mass.
-//   Dynamic bodies: physics is authoritative while simulating - ignore DirtyToPhysics
-//   pose pushes (inspector/gizmo property writers MarkDirty; pushing that back into Box3D
-//   every frame was resetting the pose => frozen crates).
-//   Kinematic still honors Dirty teleports.
-//   Each tick: (conditional) Dirty push; CoolDown--; apply Force/Torque then clear;
-//   Step; velocity readback; pose writeback WITHOUT Dirty.
-// SHARE args must be non-const refs (xECS iterator assigns into the share tuple slot).
-//
-// Static/kinetic split (direct user design, 2026-09-29):
-//   Statics are excluded from the per-frame OnUpdate scan entirely (xecs::query::none_of<static_tag>) -
-//   a level's static geometry, once created, never needs revisiting, and visiting it anyway "all the
-//   time" was called out explicitly as a no-go. Their bodies are created exactly once, in
-//   OnSceneReady (registered against xecs::scene::mgr::m_OnSceneReady - fired per scene at Play-press
-//   in the editor, or at load in a future Game target - never at scene-LOAD time itself: NOTIFY_CREATE
-//   fires with default-constructed component data during load, before LoadEntity's own deserialize
-//   loop runs - confirmed by reading _CreateEntity's own call order - so it's unusable for this).
-//   Destruction is the mirror case: a live Box3D body can only exist while Playing (Stop always does a
-//   full GameMgr rebuild + reload from disk, wiping every body for free - see StopPlay/CreateWorld in
-//   xlevel_session.h), so destroying one is only ever needed mid-session - destroy_notify (its own
-//   tiny NOTIFY_DESTROY system, below) queues the BodyId; OnPostStructuralChanges (fires right after
-//   this system's own per-frame structural-changes flush, always mid-Play when it matters) drains the
-//   queue. NOTIFY_MOVE_IN/MOVE_OUT is deliberately NOT used anywhere here - too broad a signal (any
-//   archetype migration, not specifically "this entity's physics data is now complete") - direct user
-//   correction. A static entity assembled incrementally in the editor (AddComponent one piece at a
-//   time, ending with static_tag) misses OnSceneReady the same way it would've missed a Move_In hook -
-//   known, narrow, editor-authoring-only gap; a reload (Save, or a Play/Stop cycle) fixes it, since
-//   that always re-creates the entity fresh via LoadEntity -> the next OnSceneReady.
-//   Moving a static entity's Transform while Playing demotes it to Kinematic instead of silently
-//   desyncing visuals from physics - see xscene_commands_property_edit.h / xscene_commands_transform_gizmo.h.
+// Physics lifecycle:
+//   Creation: body_builder (a builder system, doc/xecs_builder_components.md) hands the entity's builder
+//   components (PhysicsBodyProperties, PhysicsShapeProperties) to Box3D once, while the entity is being
+//   created. Box3D owns that data from then on; the entity keeps only physics_body's handle.
+//   Body type: has physics_dynamics => Dynamic; else static_tag => Static; else Kinematic.
+//   Per frame (system::OnUpdate): statics are skipped entirely (none_of<static_tag>). Force/torque are
+//   applied, kinematic Dirty poses pushed, the world stepped, poses/velocities read back. A dynamic body
+//   ignores Dirty pushes - it's physics-authoritative; callers move it through TeleportBody instead.
+//   A type change (static demotion while Playing, dynamics added/removed) is applied in place with
+//   SetBodyType - the builder components needed to recreate a body no longer exist.
+//   Destruction: destroy_notify queues the BodyId; it's destroyed before the next Step or after the
+//   structural-changes flush, never mid-Foreach.
 #include "xlioncore_physics.h"
 #include "xlioncore_physics_backend.h"
 #include "../transform/xlioncore_transform.h"
@@ -75,17 +56,11 @@ namespace xlioncore::physics
     struct system : xecs::system::instance
     {
         constexpr static auto typedef_v = xecs::system::type::update{ .m_pName = "Physics" };
-        // What OnUpdate actually touches (const = read only). none_of<static_tag>: statics are
-        // created once (OnSceneReady) and never revisited here - see this file's own top comment.
+        // What OnUpdate actually touches. none_of<static_tag>: statics never need revisiting once built.
         using query = std::tuple
-            < xecs::query::must
-                < xlioncore::transform
-                , const physics_body_properties
-                , const physics_shape_properties
-                , box3d_body
-                >
-            , xecs::query::none_of< xlioncore::static_tag >
-            , xecs::query::optional< dynamics >
+            < xecs::query::must     < xlioncore::transform, physics_body >
+            , xecs::query::none_of  < xlioncore::static_tag >
+            , xecs::query::optional < physics_dynamics >
             >;
 
         backend                    m_Backend;
@@ -96,8 +71,6 @@ namespace xlioncore::physics
 
         void OnCreate(void) noexcept
         {
-            m_MyGameMgr.m_SceneMgr.m_OnSceneReady.Register<&system::OnSceneReady>(*this);
-
             // Lets cross-module callers (xlioncore_physics_api.h's exported functions, compiled into
             // THIS DLL, so same-module access to m_Backend's non-exported methods) reach the live
             // instance via GameMgr.getUserData<system>() instead of findSystem<system>() - either
@@ -111,26 +84,19 @@ namespace xlioncore::physics
                 m_MyGameMgr.setUserData(nullptr);
         }
 
-        static b3BodyType ResolveBodyType(const dynamics* pDyn, bool bIsStatic) noexcept
+        static b3BodyType ResolveBodyType(const physics_dynamics* pDyn, bool bIsStatic) noexcept
         {
             if (pDyn) return b3_dynamicBody;
             return bIsStatic ? b3_staticBody : b3_kinematicBody;
         }
 
-        // Shared by OnUpdate (kinetic entities, every frame something changes) and OnSceneReady
-        // (statics, once). Builds Box3D creation params from the live component data and (re)creates
-        // the body - destroying the old one first if this is a recreate, not a first creation.
-        void CreateOrRecreateBody
-        ( xlioncore::transform& T, physics_body_properties& BodyProps, physics_shape_properties& ShapeProps
-        , box3d_body& Body, b3BodyType ResolvedType, float Mass
+        // Called once per entity by body_builder, while the entity is being created.
+        void CreateBody
+        ( xecs::component::entity Entity, xlioncore::transform& T
+        , const physics_body_properties& BodyProps, const physics_shape_properties& ShapeProps
+        , physics_body& Body, b3BodyType ResolvedType, float Mass
         ) noexcept
         {
-            if (B3_IS_NON_NULL(Body.m_BodyId))
-            {
-                m_Backend.DestroyBody(Body.m_BodyId);
-                Body.m_BodyId = b3_nullBodyId;
-            }
-
             const xmath::fvec3 ScaledHalfExtents = T.m_Scale * 0.5f;
 
             body_create_params Params;
@@ -151,6 +117,7 @@ namespace xlioncore::physics
             Params.m_IsSensor       = ShapeProps.m_IsSensor;
             Params.m_LocalPosition  = ShapeProps.LocalPosition();
             Params.m_LocalRotation  = ShapeProps.LocalRotation();
+            Params.m_UserData       = Entity.m_Value;
 
             Body.m_BodyId            = m_Backend.CreateBody(Params);
             Body.m_BodyHalfExtents   = ScaledHalfExtents;
@@ -160,37 +127,6 @@ namespace xlioncore::physics
             Body.m_CachedRestitution = ShapeProps.m_Restitution;
 
             T.m_DirtyToPhysics = 0;
-        }
-
-        // Fired once per scene, when it's about to actually run (Play in the editor; load in a future
-        // Game target) - never at scene-load time itself, see this file's own top comment. Creates
-        // Box3D bodies for every static entity that doesn't have one yet. Scene.m_LocalToRuntime is
-        // already exactly this scene's own entities - no query needed, just a presence check per one.
-        void OnSceneReady(xecs::scene::instance& Scene) noexcept
-        {
-            int nCreated = 0;
-            for (auto& Pair : Scene.m_LocalToRuntime)
-            {
-                const auto Entity = Pair.second;
-                if (!hasComponents<xlioncore::static_tag>(Entity)) continue;
-                if (!hasComponents<xlioncore::transform, physics_body_properties, physics_shape_properties, box3d_body>(Entity)) continue;
-
-                auto* pBody = GetComponentPtr<box3d_body>(m_MyGameMgr, Entity);
-                if (!pBody || B3_IS_NON_NULL(pBody->m_BodyId)) continue;
-
-                auto* pT          = GetComponentPtr<xlioncore::transform>(m_MyGameMgr, Entity);
-                auto* pBodyProps  = GetComponentPtr<physics_body_properties>(m_MyGameMgr, Entity);
-                auto* pShapeProps = GetComponentPtr<physics_shape_properties>(m_MyGameMgr, Entity);
-                if (!pT || !pBodyProps || !pShapeProps) continue;
-
-                CreateOrRecreateBody(*pT, *pBodyProps, *pShapeProps, *pBody, b3_staticBody, 0.0f);
-                ++nCreated;
-            }
-            if (nCreated)
-            {
-                std::printf("[Physics] OnSceneReady '%s': created %d static bodies\n", Scene.m_Name.c_str(), nCreated);
-                std::fflush(stdout);
-            }
         }
 
         // Called by destroy_notify::OnNotify. The actual DestroyBody can't happen synchronously here -
@@ -225,7 +161,7 @@ namespace xlioncore::physics
         // gameplay code, so the editor is the caller here, not OnUpdate). Zeros velocity because a
         // teleport has no implied motion - the same semantic every other engine's equivalent API uses
         // (Unity's Rigidbody.position setter, Unreal's SetActorLocation on a simulating body).
-        void TeleportBody(box3d_body& Body, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept
+        void TeleportBody(physics_body& Body, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept
         {
             if (B3_IS_NULL(Body.m_BodyId)) return;
             m_Backend.SetTransform(Body.m_BodyId, Position, Rotation);
@@ -249,12 +185,7 @@ namespace xlioncore::physics
             const bool bLog = (s_Tick <= 3) || ((s_Tick % 60) == 0);
 
             xecs::query::instance Query;
-            Query.m_Must.AddFromComponents
-                < xlioncore::transform
-                , physics_body_properties
-                , physics_shape_properties
-                , box3d_body
-                >();
+            Query.m_Must.AddFromComponents< xlioncore::transform, physics_body >();
             Query.m_NoneOf.AddFromComponents< xlioncore::static_tag >();
             auto S = Search(Query);
 
@@ -263,11 +194,8 @@ namespace xlioncore::physics
             float yFirstDyn = -999.f;
 
             Foreach(S, [&]( const xecs::component::entity& Entity
-                          , xlioncore::transform& T
-                          , physics_body_properties& BodyProps
-                          , physics_shape_properties& ShapeProps
-                          , box3d_body& Body
-                          , dynamics* pDyn ) noexcept
+                          , physics_body& Body
+                          , physics_dynamics* pDyn ) noexcept
             {
                 // A sibling killed earlier in THIS SAME pass (a future physics-driven-kill feature,
                 // e.g. culling) is still zombie, not yet reclaimed - S was snapshotted before this
@@ -279,27 +207,26 @@ namespace xlioncore::physics
                 if (pDyn) ++nHasDynComp;
 
                 const b3BodyType ResolvedType = ResolveBodyType(pDyn, false);   // never static here - excluded from this query
-                const float      Mass         = pDyn ? pDyn->m_Mass : 0.0f;
 
                 if (ResolvedType == b3_dynamicBody) ++nDyn;
                 else ++nKin;
 
-                // Only "does a body exist at all" and "did its type change" (static demotion, a
-                // dynamics add/remove) still warrant a recreate. Mass/Friction/Restitution/Scale are
-                // construction-only data (BodyProps/ShapeProps are SHARE components, seed values read
-                // once here) - a live change to any of those after creation is the caller's job, via
-                // the physics system's own direct Box3D-backed setters, not something this loop polls
-                // for anymore. See xlion_construction_component_idea memory for the fuller design.
-                const bool NeedsRecreate = B3_IS_NULL(Body.m_BodyId) || Body.m_CachedBodyType != ResolvedType;
-
-                if (NeedsRecreate)
-                {
-                    CreateOrRecreateBody(T, BodyProps, ShapeProps, Body, ResolvedType, Mass);
-                    if (B3_IS_NULL(Body.m_BodyId)) ++nNull;
-                }
-                else if (B3_IS_NULL(Body.m_BodyId))
+                // No body = its builder never ran (or failed) - nothing here can create one, the
+                // builder components it would need are gone. See body_builder.
+                if (B3_IS_NULL(Body.m_BodyId))
                 {
                     ++nNull;
+                    return;
+                }
+
+                // Static demotion while Playing, or physics_dynamics added/removed.
+                if (Body.m_CachedBodyType != ResolvedType)
+                {
+                    m_Backend.SetBodyType(Body.m_BodyId, ResolvedType);
+                    if (ResolvedType == b3_dynamicBody) m_Backend.SetMass(Body.m_BodyId, pDyn->m_Mass);
+                    m_Backend.SetAwake(Body.m_BodyId, true);
+                    Body.m_CachedBodyType = ResolvedType;
+                    Body.m_CachedMass     = pDyn ? pDyn->m_Mass : 0.0f;
                 }
 
                 if (pDyn && B3_IS_NON_NULL(Body.m_BodyId) && ResolvedType == b3_dynamicBody)
@@ -316,17 +243,17 @@ namespace xlioncore::physics
             // Editor/gameplay Dirty pose pushes: a dynamic body ignores these entirely (direct user
             // decision - a live body is physics-authoritative; a caller that really wants to move one
             // calls the physics system directly, see TeleportBody/xscene's TeleportDynamicIfPlaying) -
-            // scoped out at the QUERY level (none_of<dynamics>), not a runtime check, so a scene with
+            // scoped out at the QUERY level (none_of<physics_dynamics>), not a runtime check, so a scene with
             // many dynamic crates never pays even one branch for this per entity, per frame. Only
             // entities visited here are guaranteed kinematic (not static - excluded already; not
             // dynamic - excluded here) by construction.
             {
                 xecs::query::instance DirtyQuery;
-                DirtyQuery.m_Must.AddFromComponents<xlioncore::transform, box3d_body>();
-                DirtyQuery.m_NoneOf.AddFromComponents<xlioncore::static_tag, dynamics>();
+                DirtyQuery.m_Must.AddFromComponents<xlioncore::transform, physics_body>();
+                DirtyQuery.m_NoneOf.AddFromComponents<xlioncore::static_tag, physics_dynamics>();
                 auto DirtySet = Search(DirtyQuery);
 
-                Foreach(DirtySet, [&](const xecs::component::entity& Entity, xlioncore::transform& T, box3d_body& Body) noexcept
+                Foreach(DirtySet, [&](const xecs::component::entity& Entity, xlioncore::transform& T, physics_body& Body) noexcept
                 {
                     if (Entity.isZombie()) return;
                     if (B3_IS_NULL(Body.m_BodyId)) return;   // not created yet this frame - the main pass above will
@@ -345,10 +272,8 @@ namespace xlioncore::physics
             m_Backend.Step();
 
             Foreach(S, [&]( xlioncore::transform& T
-                          , physics_body_properties&
-                          , physics_shape_properties&
-                          , box3d_body& Body
-                          , dynamics* pDyn ) noexcept
+                          , physics_body& Body
+                          , physics_dynamics* pDyn ) noexcept
             {
                 if (B3_IS_NULL(Body.m_BodyId)) return;
 
@@ -378,6 +303,27 @@ namespace xlioncore::physics
         }
     };
 
+    // Hands an entity's physics builder components to Box3D while the entity is being created (see
+    // doc/xecs_builder_components.md). Runs once per entity; the builder components are dropped
+    // right after, so Box3D (through physics_body's handle) is the only owner of this data.
+    struct body_builder : xecs::system::instance
+    {
+        constexpr static auto typedef_v = xecs::system::type::builder{ .m_pName = "Physics Body Builder" };
+
+        using xecs::system::instance::instance;
+
+        void operator()( const xecs::component::entity&   Entity
+                       , xlioncore::transform&             T
+                       , const physics_body_properties&    BodyProps
+                       , const physics_shape_properties&   ShapeProps
+                       , physics_body&                     Body
+                       , const physics_dynamics*           pDyn ) noexcept
+        {
+            const b3BodyType Type = system::ResolveBodyType( pDyn, hasComponents<xlioncore::static_tag>(Entity) );
+            getSystem<system>().CreateBody( Entity, T, BodyProps, ShapeProps, Body, Type, pDyn ? pDyn->m_Mass : 0.0f );
+        }
+    };
+
     // Tiny companion notify-system - physics::system itself can't ALSO be NOTIFY_DESTROY (a system's
     // typedef_v.id_v is one kind only). Fires synchronously, immediately, inside DestroyEntity itself
     // (xecs_archetype_inline.h) - BEFORE the entity is zombied or its pool slot freed, so the
@@ -385,7 +331,7 @@ namespace xlioncore::physics
     struct destroy_notify : xecs::system::instance
     {
         constexpr static auto typedef_v = xecs::system::type::notify_destroy{ .m_pName = "Physics Destroy Notify" };
-        using query = std::tuple< xecs::query::must< box3d_body > >;
+        using query = std::tuple< xecs::query::must< physics_body > >;
 
         xecs::game_mgr::instance& m_MyGameMgr;
 
@@ -393,7 +339,7 @@ namespace xlioncore::physics
 
         void OnNotify(xecs::component::entity& Entity) noexcept
         {
-            auto* pBody = GetComponentPtr<box3d_body>(m_MyGameMgr, Entity);
+            auto* pBody = GetComponentPtr<physics_body>(m_MyGameMgr, Entity);
             if (!pBody || B3_IS_NULL(pBody->m_BodyId)) return;
             if (auto* pOwner = findSystem<system>())
                 pOwner->QueueDestroy(pBody->m_BodyId);

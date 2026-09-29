@@ -9,7 +9,7 @@
 // caller" escape hatch: a live dynamic body is physics-authoritative and Physics::OnUpdate never
 // looks at its Dirty flag (see xlioncore_physics_system.h's own comment) - a caller that really
 // wants to move one goes through here, not through the ECS. Callers never need xlioncore_physics.h's
-// box3d_body definition - everything box3d-shaped is resolved inside this DLL, via
+// physics_body definition - everything box3d-shaped is resolved inside this DLL, via
 // GameMgr.getUserData<physics::system>() (set in system::OnCreate).
 #include "dependencies/xECSV2/src/xecs.h"
 #include "dependencies/xmath/source/xmath.h"

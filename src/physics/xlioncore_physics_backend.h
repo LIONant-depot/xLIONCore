@@ -19,18 +19,21 @@ namespace xlioncore::physics
         bool            m_IsBullet          = false;
         xmath::fvec3    m_Position          = {};
         xmath::fquat    m_Rotation          = xmath::fquat::fromIdentity();
+        std::uint64_t   m_UserData          = 0;      // The owning entity's handle - maps a Box3D body back to its entity
+    };
+
+    struct box_shape_params
+    {
         xmath::fvec3    m_HalfExtents       = xmath::fvec3::fromOne() * 0.5f;
-        float           m_Density           = 0.0f;   // unused for mass when m_Mass > 0
-        float           m_Mass              = 0.0f;   // >0 => authoritative mass via SetMassData
+        xmath::fvec3    m_LocalPosition     = {};
+        xmath::fquat    m_LocalRotation     = xmath::fquat::fromIdentity();
+        float           m_Density           = 0.0f;   // 0 for static/kinematic bodies
         float           m_Friction          = 0.6f;
         float           m_Restitution       = 0.0f;
         std::uint64_t   m_CategoryBits      = B3_DEFAULT_CATEGORY_BITS;
         std::uint64_t   m_MaskBits          = B3_DEFAULT_MASK_BITS;
         std::int32_t    m_GroupIndex        = 0;
         bool            m_IsSensor          = false;
-        xmath::fvec3    m_LocalPosition     = {};
-        xmath::fquat    m_LocalRotation     = xmath::fquat::fromIdentity();
-        std::uint64_t   m_UserData          = 0;      // The owning entity's handle - maps a Box3D body back to its entity
     };
 
     class backend
@@ -39,7 +42,8 @@ namespace xlioncore::physics
         backend  (void) noexcept;
         ~backend (void) noexcept;
 
-        b3BodyId     CreateBody         ( const body_create_params& Params ) noexcept;
+        b3BodyId     CreateBody         ( const body_create_params& Params ) noexcept;     // No shapes yet - add them, then SetMass
+        void         AddBoxShape        ( b3BodyId BodyId, const box_shape_params& Params ) noexcept;
         void         Step               (void) noexcept;
         xmath::fvec3 GetPosition        (b3BodyId BodyId) const noexcept;
         xmath::fquat GetRotation        (b3BodyId BodyId) const noexcept;

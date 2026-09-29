@@ -17,13 +17,16 @@
 // Shape local pose stored as plain floats (not fvec3/fquat) to avoid alignment holes in the SHARE blob.
 #include "dependencies/xECSV2/src/xecs.h"
 #include "dependencies/xmath/source/xmath.h"
+#include "../xlioncore_small_vector_xproperty.h"
+#include "xlioncore_physics_material.h"
 #include "plugins/xscript_module.plugin/source/Runtime/xscript_registration.h"
 #include <box3d/box3d.h>
 #include <cstdint>
 
 namespace xlioncore::physics
 {
-    // Authored body flags. Layout packs to 12 bytes with pads.
+    // Authored body flags + the collision filter every shape of the body uses. Explicit pads keep
+    // the SHARE key (a hash of the raw bytes) stable.
     struct physics_body_properties
     {
         constexpr static auto typedef_v = xecs::component::type::share
@@ -37,6 +40,9 @@ namespace xlioncore::physics
         std::uint8_t    m_Pad0[2]                    = {};
         float           m_LinearDamping              = 0.0f;
         float           m_AngularDamping             = 0.0f;
+        std::int32_t    m_GroupIndex                 = 0;
+        std::uint64_t   m_CategoryBits               = B3_DEFAULT_CATEGORY_BITS;
+        std::uint64_t   m_MaskBits                   = B3_DEFAULT_MASK_BITS;
 
         XPROPERTY_DEF
         ( "PhysicsBodyProperties", physics_body_properties
@@ -44,10 +50,55 @@ namespace xlioncore::physics
         , obj_member<"AngularDamping",            &physics_body_properties::m_AngularDamping>
         , obj_member<"EnableSleep",               &physics_body_properties::m_EnableSleep>
         , obj_member<"EnableContinuousCollision", &physics_body_properties::m_EnableContinuousCollision>
+        , obj_member<"CategoryBits",              &physics_body_properties::m_CategoryBits>
+        , obj_member<"MaskBits",                  &physics_body_properties::m_MaskBits>
+        , obj_member<"GroupIndex",                &physics_body_properties::m_GroupIndex>
         )
     };
     XSCRIPT_REGISTER_COMPONENT(physics_body_properties, "Physics", 10)
-    static_assert(sizeof(physics_body_properties) == 12);
+    static_assert(sizeof(physics_body_properties) == 32);
+
+    // One box of a PhysicsColliderBox. Offset and Size are in the entity's local space and get
+    // multiplied by Transform.Scale (so Size 1 = the entity's own scaled unit box).
+    struct collider_box_shape
+    {
+        xmath::fvec3    m_Offset          = {};
+        xmath::fvec3    m_RotationDegrees = {};
+        xmath::fvec3    m_Size            = xmath::fvec3::fromOne();
+        material::ref   m_Material        = {};
+        bool            m_IsSensor        = false;
+
+        XPROPERTY_DEF
+        ( "ColliderBox", collider_box_shape
+        , obj_member<"Offset",   &collider_box_shape::m_Offset>
+        , obj_member<"Rotation", &collider_box_shape::m_RotationDegrees>
+        , obj_member<"Size",     &collider_box_shape::m_Size>
+        , obj_member<"Material", &collider_box_shape::m_Material>
+        , obj_member<"IsSensor", &collider_box_shape::m_IsSensor>
+        )
+    };
+    XPROPERTY_REG(collider_box_shape)
+
+    // Builder component: box shapes handed to Box3D when the entity is created (see body_builder).
+    // Several collider components (and several boxes) on one entity make a compound body.
+    struct physics_collider_box
+    {
+        constexpr static auto typedef_v = xecs::component::type::data
+        { .m_Guid     = xecs::component::type::guid{ "xlioncore::physics::physics_collider_box" }
+        , .m_pName    = "PhysicsColliderBox"
+        , .m_bBuilder = true
+        };
+
+        xcontainer::small_vector<collider_box_shape, 1> m_Boxes;
+
+        physics_collider_box( void ) noexcept { m_Boxes.resize(1); }    // Added from the editor = one unit box
+
+        XPROPERTY_DEF
+        ( "PhysicsColliderBox", physics_collider_box
+        , obj_member<"Boxes", &physics_collider_box::m_Boxes>
+        )
+    };
+    XSCRIPT_REGISTER_COMPONENT(physics_collider_box, "Physics", 25)
 
     // V1 inlined shape. Density kept for future physics material but is NOT mass authority.
     // Plain floats for local pose avoid fvec3/fquat alignment padding.

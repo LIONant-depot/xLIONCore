@@ -45,14 +45,13 @@ namespace xlioncore::physics
         BodyDef.enableSleep    = Params.m_EnableSleep;
         BodyDef.isBullet       = Params.m_IsBullet;
         BodyDef.userData       = reinterpret_cast<void*>(static_cast<std::uintptr_t>(Params.m_UserData));
-        const b3BodyId BodyId  = b3CreateBody(m_World, &BodyDef);
+        return b3CreateBody(m_World, &BodyDef);
+    }
 
+    void backend::AddBoxShape(b3BodyId BodyId, const box_shape_params& Params) noexcept
+    {
         b3ShapeDef ShapeDef = b3DefaultShapeDef();
-        // Density is off-core for mass authority; keep a positive value so Box3D can still build
-        // shape mass props when we later scale via SetMassData. Static/kinematic: density 0.
-        ShapeDef.density                    = (Params.m_Type == b3_dynamicBody)
-                                            ? ((Params.m_Mass > 0.0f) ? 1.0f : Params.m_Density)
-                                            : 0.0f;
+        ShapeDef.density                    = Params.m_Density;
         ShapeDef.baseMaterial.friction      = Params.m_Friction;
         ShapeDef.baseMaterial.restitution   = Params.m_Restitution;
         ShapeDef.filter.categoryBits        = Params.m_CategoryBits;
@@ -75,11 +74,6 @@ namespace xlioncore::physics
                 Params.m_HalfExtents.m_X, Params.m_HalfExtents.m_Y, Params.m_HalfExtents.m_Z, Local);
             b3CreateHullShape(BodyId, &ShapeDef, &Hull.base);
         }
-
-        if (Params.m_Type == b3_dynamicBody && Params.m_Mass > 0.0f)
-            SetMass(BodyId, Params.m_Mass);
-
-        return BodyId;
     }
 
     void backend::Step(void) noexcept

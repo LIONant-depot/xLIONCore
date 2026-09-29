@@ -90,15 +90,22 @@ namespace xlioncore::physics
             return bIsStatic ? b3_staticBody : b3_kinematicBody;
         }
 
-        // Called once per entity by body_builder, while the entity is being created.
+        // PhysicsMaterial assets, read from the project once per world (descriptor-only resources).
+        const material::descriptor& getMaterial( const material::ref& Ref ) noexcept
+        {
+            const std::uint64_t Key = Ref.m_Instance.m_Value;
+            if( auto It = m_Materials.find(Key); It != m_Materials.end() ) return It->second;
+            return m_Materials.emplace( Key, material::Load( m_MyGameMgr.m_SceneMgr.m_ProjectPath, Key ) ).first->second;
+        }
+
+        // Called once per entity by body_builder, while the entity is being created: the body, then
+        // every shape, then the mass (PhysicsDynamics is the mass authority - shape densities only
+        // shape the inertia).
         void CreateBody
-        ( xecs::component::entity Entity, xlioncore::transform& T
-        , const physics_body_properties& BodyProps, const physics_shape_properties& ShapeProps
-        , physics_body& Body, b3BodyType ResolvedType, float Mass
+        ( xecs::component::entity Entity, xlioncore::transform& T, const physics_body_properties& BodyProps
+        , std::span<const box_shape_params> Shapes, physics_body& Body, b3BodyType ResolvedType, float Mass
         ) noexcept
         {
-            const xmath::fvec3 ScaledHalfExtents = T.m_Scale * 0.5f;
-
             body_create_params Params;
             Params.m_Type           = ResolvedType;
             Params.m_LinearDamping  = BodyProps.m_LinearDamping;
@@ -107,27 +114,25 @@ namespace xlioncore::physics
             Params.m_IsBullet       = BodyProps.m_EnableContinuousCollision;
             Params.m_Position       = T.m_Position;
             Params.m_Rotation       = T.m_Rotation;
-            Params.m_HalfExtents    = ScaledHalfExtents;
-            Params.m_Mass           = Mass;
-            Params.m_Friction       = ShapeProps.m_Friction;
-            Params.m_Restitution    = ShapeProps.m_Restitution;
-            Params.m_CategoryBits   = ShapeProps.m_CategoryBits;
-            Params.m_MaskBits       = ShapeProps.m_MaskBits;
-            Params.m_GroupIndex     = ShapeProps.m_GroupIndex;
-            Params.m_IsSensor       = ShapeProps.m_IsSensor;
-            Params.m_LocalPosition  = ShapeProps.LocalPosition();
-            Params.m_LocalRotation  = ShapeProps.LocalRotation();
             Params.m_UserData       = Entity.m_Value;
 
-            Body.m_BodyId            = m_Backend.CreateBody(Params);
-            Body.m_BodyHalfExtents   = ScaledHalfExtents;
+            Body.m_BodyId = m_Backend.CreateBody(Params);
+            for( auto& Shape : Shapes )
+                m_Backend.AddBoxShape( Body.m_BodyId, Shape );
+
+            if( ResolvedType == b3_dynamicBody && Mass > 0.0f )
+                m_Backend.SetMass( Body.m_BodyId, Mass );
+
+            Body.m_BodyHalfExtents   = Shapes.empty() ? xmath::fvec3::fromZero() : Shapes[0].m_HalfExtents;
             Body.m_CachedBodyType    = ResolvedType;
             Body.m_CachedMass        = Mass;
-            Body.m_CachedFriction    = ShapeProps.m_Friction;
-            Body.m_CachedRestitution = ShapeProps.m_Restitution;
+            Body.m_CachedFriction    = Shapes.empty() ? 0.0f : Shapes[0].m_Friction;
+            Body.m_CachedRestitution = Shapes.empty() ? 0.0f : Shapes[0].m_Restitution;
 
             T.m_DirtyToPhysics = 0;
         }
+
+        std::unordered_map<std::uint64_t, material::descriptor> m_Materials;
 
         // Called by destroy_notify::OnNotify. The actual DestroyBody can't happen synchronously here -
         // something else may still be mid-Foreach over this same archetype at that exact moment (direct
@@ -315,12 +320,63 @@ namespace xlioncore::physics
         void operator()( const xecs::component::entity&   Entity
                        , xlioncore::transform&             T
                        , const physics_body_properties&    BodyProps
-                       , const physics_shape_properties&   ShapeProps
                        , physics_body&                     Body
+                       , const physics_collider_box*       pBoxes
+                       , const physics_shape_properties*   pLegacyShape       // Pre-collider single box - until scenes are migrated
                        , const physics_dynamics*           pDyn ) noexcept
         {
-            const b3BodyType Type = system::ResolveBodyType( pDyn, hasComponents<xlioncore::static_tag>(Entity) );
-            getSystem<system>().CreateBody( Entity, T, BodyProps, ShapeProps, Body, Type, pDyn ? pDyn->m_Mass : 0.0f );
+            auto&            Physics  = getSystem<system>();
+            const b3BodyType Type     = system::ResolveBodyType( pDyn, hasComponents<xlioncore::static_tag>(Entity) );
+            const bool       bDynamic = (Type == b3_dynamicBody);
+
+            std::vector<box_shape_params> Shapes;
+
+            if( pBoxes )
+            {
+                constexpr float DegToRad = 3.14159265358979f / 180.0f;
+                for( auto& Box : pBoxes->m_Boxes )
+                {
+                    const auto& Material = Physics.getMaterial( Box.m_Material );
+
+                    box_shape_params& S = Shapes.emplace_back();
+                    S.m_HalfExtents   = Box.m_Size   * T.m_Scale * 0.5f;
+                    S.m_LocalPosition = Box.m_Offset * T.m_Scale;
+                    S.m_LocalRotation = xmath::fquat{ xmath::radian3{ xmath::radian{ Box.m_RotationDegrees.m_X * DegToRad }
+                                                                    , xmath::radian{ Box.m_RotationDegrees.m_Y * DegToRad }
+                                                                    , xmath::radian{ Box.m_RotationDegrees.m_Z * DegToRad } } };
+                    S.m_Density       = bDynamic ? Material.m_Density : 0.0f;
+                    S.m_Friction      = Material.m_Friction;
+                    S.m_Restitution   = Material.m_Restitution;
+                    S.m_CategoryBits  = BodyProps.m_CategoryBits;
+                    S.m_MaskBits      = BodyProps.m_MaskBits;
+                    S.m_GroupIndex    = BodyProps.m_GroupIndex;
+                    S.m_IsSensor      = Box.m_IsSensor;
+                }
+            }
+
+            if( pLegacyShape )
+            {
+                box_shape_params& S = Shapes.emplace_back();
+                S.m_HalfExtents   = T.m_Scale * 0.5f;
+                S.m_LocalPosition = pLegacyShape->LocalPosition();
+                S.m_LocalRotation = pLegacyShape->LocalRotation();
+                S.m_Density       = bDynamic ? 1.0f : 0.0f;
+                S.m_Friction      = pLegacyShape->m_Friction;
+                S.m_Restitution   = pLegacyShape->m_Restitution;
+                S.m_CategoryBits  = pLegacyShape->m_CategoryBits;
+                S.m_MaskBits      = pLegacyShape->m_MaskBits;
+                S.m_GroupIndex    = pLegacyShape->m_GroupIndex;
+                S.m_IsSensor      = pLegacyShape->m_IsSensor;
+            }
+
+            if( Shapes.empty() )
+            {
+                std::printf("[Physics] WARNING: entity 0x%llX has PhysicsBodyProperties but no collider - no body created\n", static_cast<unsigned long long>(Entity.m_Value));
+                std::fflush(stdout);
+                return;
+            }
+
+            Physics.CreateBody( Entity, T, BodyProps, Shapes, Body, Type, pDyn ? pDyn->m_Mass : 0.0f );
         }
     };
 

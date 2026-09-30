@@ -28,6 +28,7 @@ namespace xlioncore
         xmath::fquat    m_Rotation              = xmath::fquat::fromIdentity(); // source of truth
         xmath::fvec3    m_Scale                 = xmath::fvec3::fromOne();
         xmath::radian3  m_EditorRotation        = {};
+        bool            m_EditorLockScale       = false;
 
         // ECS -> Box3D dirty flag. Physics writeback never touches this.
         std::uint8_t    m_DirtyToPhysics        : 1 = 0;
@@ -48,9 +49,16 @@ namespace xlioncore
         inline void             setYaw              (const xmath::radian Angle)         noexcept { auto R = getEditorRotation(); R.m_Yaw   = Angle; setRotation(R); }
         inline void             setRotation         (const xmath::radian3& Radian3)     noexcept { m_EditorRotation          = Radian3; setRotation(xmath::fquat{m_EditorRotation}); }
         inline void             setScale            (const xmath::fvec3& V )            noexcept { m_Scale     = V; MarkDirtyToPhysics(); }
-        inline void             setScaleX           (const float X)                     noexcept { m_Scale.m_X = X; MarkDirtyToPhysics(); }
-        inline void             setScaleY           (const float Y)                     noexcept { m_Scale.m_Y = Y; MarkDirtyToPhysics(); }
-        inline void             setScaleZ           (const float Z)                     noexcept { m_Scale.m_Z = Z; MarkDirtyToPhysics(); }
+        // With m_EditorLockScale on, editing one axis scales the other two by the same ratio (proportional).
+        inline void             setScaleAxis        (float& Axis, const float New)      noexcept
+        {
+            if (m_EditorLockScale && Axis != 0.0f) m_Scale *= New / Axis;   // ponytail: old axis 0 has no ratio, falls to plain set
+            else                                   Axis = New;
+            MarkDirtyToPhysics();
+        }
+        inline void             setScaleX           (const float X)                     noexcept { setScaleAxis(m_Scale.m_X, X); }
+        inline void             setScaleY           (const float Y)                     noexcept { setScaleAxis(m_Scale.m_Y, Y); }
+        inline void             setScaleZ           (const float Z)                     noexcept { setScaleAxis(m_Scale.m_Z, Z); }
 
         // EditorRotationDegrees: ZXY roll-pitch-yaw in degrees (X=pitch, Y=yaw, Z=roll).
         // Position/Scale/RotationDegrees writers call MarkDirtyToPhysics so editor edits push to Box3D.
@@ -108,6 +116,7 @@ namespace xlioncore
                     else O.setScaleZ(V);
                 }>
             >
+        , obj_member<"EditorLockScale", &transform::m_EditorLockScale, member_flags<flags::DONT_SHOW>>
         )
     };
     // Inspector: Transform category, priority 0 = top of entity inspector.

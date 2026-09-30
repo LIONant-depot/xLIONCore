@@ -43,18 +43,6 @@ namespace xlioncore::physics
         std::uint64_t   m_MaskBits          = B3_DEFAULT_MASK_BITS;
         std::int32_t    m_GroupIndex        = 0;
         bool            m_IsSensor          = false;
-
-        // Half extents of the shape's local bounding box (before m_LocalRotation) - for diagnostics.
-        xmath::fvec3 BoundsHalfExtents(void) const noexcept
-        {
-            switch (m_Kind)
-            {
-            case kind::SPHERE:   return { m_Radius, m_Radius, m_Radius };
-            case kind::CAPSULE:  return { m_Radius, m_HalfHeight + m_Radius, m_Radius };
-            case kind::CYLINDER: return { m_Radius, m_HalfHeight, m_Radius };
-            default:             return m_HalfExtents;
-            }
-        }
     };
 
     class backend

@@ -4,7 +4,7 @@
 
 // Physics lifecycle:
 //   Creation: body_builder (a builder system, doc/xecs_builder_components.md) hands the entity's builder
-//   components (PhysicsBodyProperties, PhysicsShapeProperties) to Box3D once, while the entity is being
+//   components (PhysicsBodyProperties and the collider components) to Box3D once, while the entity is being
 //   created. Box3D owns that data from then on; the entity keeps only physics_body's handle.
 //   Body type: has physics_dynamics => Dynamic; else static_tag => Static; else Kinematic.
 //   Per frame (system::OnUpdate): statics are skipped entirely (none_of<static_tag>). Force/torque are
@@ -123,11 +123,8 @@ namespace xlioncore::physics
             if( ResolvedType == b3_dynamicBody && Mass > 0.0f )
                 m_Backend.SetMass( Body.m_BodyId, Mass );
 
-            Body.m_BodyHalfExtents   = Shapes.empty() ? xmath::fvec3::fromZero() : Shapes[0].BoundsHalfExtents();
             Body.m_CachedBodyType    = ResolvedType;
             Body.m_CachedMass        = Mass;
-            Body.m_CachedFriction    = Shapes.empty() ? 0.0f : Shapes[0].m_Friction;
-            Body.m_CachedRestitution = Shapes.empty() ? 0.0f : Shapes[0].m_Restitution;
 
             T.m_DirtyToPhysics = 0;
         }
@@ -325,7 +322,6 @@ namespace xlioncore::physics
                        , const physics_collider_sphere*    pSpheres
                        , const physics_collider_capsule*   pCapsules
                        , const physics_collider_cylinder*  pCylinders
-                       , const physics_shape_properties*   pLegacyShape       // Pre-collider single box - until scenes are migrated
                        , const physics_dynamics*           pDyn ) noexcept
         {
             auto&            Physics  = getSystem<system>();
@@ -380,21 +376,6 @@ namespace xlioncore::physics
                     S.m_Radius     = Size.m_Radius;
                     S.m_HalfHeight = Size.m_HalfHeight;
                 }
-
-            if( pLegacyShape )
-            {
-                shape_params& S = Shapes.emplace_back();
-                S.m_HalfExtents   = T.m_Scale * 0.5f;
-                S.m_LocalPosition = pLegacyShape->LocalPosition();
-                S.m_LocalRotation = pLegacyShape->LocalRotation();
-                S.m_Density       = bDynamic ? 1.0f : 0.0f;
-                S.m_Friction      = pLegacyShape->m_Friction;
-                S.m_Restitution   = pLegacyShape->m_Restitution;
-                S.m_CategoryBits  = pLegacyShape->m_CategoryBits;
-                S.m_MaskBits      = pLegacyShape->m_MaskBits;
-                S.m_GroupIndex    = pLegacyShape->m_GroupIndex;
-                S.m_IsSensor      = pLegacyShape->m_IsSensor;
-            }
 
             if( Shapes.empty() )
             {

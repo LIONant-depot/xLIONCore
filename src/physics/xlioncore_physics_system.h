@@ -99,11 +99,15 @@ namespace xlioncore::physics
         }
 
         // Called once per entity by body_builder, while the entity is being created: the body, then
-        // every shape, then the mass (PhysicsDynamics is the mass authority - shape densities only
-        // shape the inertia).
+        // every shape, then - for a dynamic body - the PhysicsDynamics values as the body's starting state:
+        //   Mass             the mass authority (shape densities only shape the inertia),
+        //   Linear/Angular   the initial velocities (the body leaves the spawn point already moving/spinning),
+        //   Force/Torque     stay in the component: OnUpdate applies them before the first Step and then
+        //                    clears them, so they push on the very first simulated tick without the
+        //                    builder having to (and without applying them twice).
         void CreateBody
         ( xecs::component::entity Entity, xlioncore::transform& T, const physics_body_properties& BodyProps
-        , std::span<const shape_params> Shapes, physics_body& Body, b3BodyType ResolvedType, float Mass
+        , std::span<const shape_params> Shapes, physics_body& Body, b3BodyType ResolvedType, const physics_dynamics* pDyn
         ) noexcept
         {
             body_create_params Params;
@@ -120,8 +124,17 @@ namespace xlioncore::physics
             for( auto& Shape : Shapes )
                 m_Backend.AddShape( Body.m_BodyId, Shape );
 
-            if( ResolvedType == b3_dynamicBody && Mass > 0.0f )
-                m_Backend.SetMass( Body.m_BodyId, Mass );
+            const float Mass = pDyn ? pDyn->m_Mass : 0.0f;
+            if( ResolvedType == b3_dynamicBody )
+            {
+                if( Mass > 0.0f ) m_Backend.SetMass( Body.m_BodyId, Mass );
+
+                if( pDyn )
+                {
+                    m_Backend.SetLinearVelocity ( Body.m_BodyId, pDyn->m_LinearVelocity );
+                    m_Backend.SetAngularVelocity( Body.m_BodyId, pDyn->m_AngularVelocity );
+                }
+            }
 
             Body.m_CachedBodyType    = ResolvedType;
             Body.m_CachedMass        = Mass;
@@ -384,7 +397,7 @@ namespace xlioncore::physics
                 return;
             }
 
-            Physics.CreateBody( Entity, T, BodyProps, Shapes, Body, Type, pDyn ? pDyn->m_Mass : 0.0f );
+            Physics.CreateBody( Entity, T, BodyProps, Shapes, Body, Type, pDyn );
         }
     };
 

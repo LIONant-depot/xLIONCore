@@ -48,7 +48,7 @@ namespace xlioncore::physics
         return b3CreateBody(m_World, &BodyDef);
     }
 
-    void backend::AddBoxShape(b3BodyId BodyId, const box_shape_params& Params) noexcept
+    void backend::AddShape(b3BodyId BodyId, const shape_params& Params) noexcept
     {
         b3ShapeDef ShapeDef = b3DefaultShapeDef();
         ShapeDef.density                    = Params.m_Density;
@@ -60,19 +60,58 @@ namespace xlioncore::physics
         ShapeDef.isSensor                   = Params.m_IsSensor;
         ShapeDef.updateBodyMass             = true;
 
-        if (IsIdentityLocal(Params.m_LocalPosition, Params.m_LocalRotation))
+        const xmath::fvec3& P = Params.m_LocalPosition;
+        b3Transform Local{};
+        Local.p = { P.m_X, P.m_Y, P.m_Z };
+        Local.q = ToB3(Params.m_LocalRotation);
+
+        switch (Params.m_Kind)
         {
-            b3BoxHull Hull = b3MakeBoxHull(Params.m_HalfExtents.m_X, Params.m_HalfExtents.m_Y, Params.m_HalfExtents.m_Z);
-            b3CreateHullShape(BodyId, &ShapeDef, &Hull.base);
+        case shape_params::kind::BOX:
+        {
+            const xmath::fvec3& H = Params.m_HalfExtents;
+            if (IsIdentityLocal(Params.m_LocalPosition, Params.m_LocalRotation))
+            {
+                b3BoxHull Hull = b3MakeBoxHull(H.m_X, H.m_Y, H.m_Z);
+                b3CreateHullShape(BodyId, &ShapeDef, &Hull.base);
+            }
+            else
+            {
+                b3BoxHull Hull = b3MakeTransformedBoxHull(H.m_X, H.m_Y, H.m_Z, Local);
+                b3CreateHullShape(BodyId, &ShapeDef, &Hull.base);
+            }
+            break;
         }
-        else
+        case shape_params::kind::SPHERE:
         {
-            b3Transform Local{};
-            Local.p = { Params.m_LocalPosition.m_X, Params.m_LocalPosition.m_Y, Params.m_LocalPosition.m_Z };
-            Local.q = ToB3(Params.m_LocalRotation);
-            b3BoxHull Hull = b3MakeTransformedBoxHull(
-                Params.m_HalfExtents.m_X, Params.m_HalfExtents.m_Y, Params.m_HalfExtents.m_Z, Local);
-            b3CreateHullShape(BodyId, &ShapeDef, &Hull.base);
+            const b3Sphere Sphere{ Local.p, Params.m_Radius };
+            b3CreateSphereShape(BodyId, &ShapeDef, &Sphere);
+            break;
+        }
+        case shape_params::kind::CAPSULE:
+        {
+            // The segment runs along the shape's local Y; the shape rotation turns it into the body frame.
+            const b3Vec3 Half = b3RotateVector(Local.q, { 0.0f, Params.m_HalfHeight, 0.0f });
+            const b3Capsule Capsule{ { Local.p.x - Half.x, Local.p.y - Half.y, Local.p.z - Half.z }
+                                   , { Local.p.x + Half.x, Local.p.y + Half.y, Local.p.z + Half.z }
+                                   , Params.m_Radius };
+            b3CreateCapsuleShape(BodyId, &ShapeDef, &Capsule);
+            break;
+        }
+        case shape_params::kind::CYLINDER:
+        {
+            // b3CreateCylinder builds the hull from yOffset up to yOffset + height, so centre it on Y first.
+            constexpr int Sides = 24;
+            b3HullData* pBase = b3CreateCylinder(Params.m_HalfHeight * 2.0f, Params.m_Radius, -Params.m_HalfHeight, Sides);
+            if (pBase == nullptr) break;
+            b3HullData* pHull = IsIdentityLocal(Params.m_LocalPosition, Params.m_LocalRotation)
+                              ? nullptr
+                              : b3CloneAndTransformHull(pBase, Local, { 1.0f, 1.0f, 1.0f });
+            b3CreateHullShape(BodyId, &ShapeDef, pHull ? pHull : pBase);      // the world clones the hull
+            if (pHull) b3DestroyHull(pHull);
+            b3DestroyHull(pBase);
+            break;
+        }
         }
     }
 

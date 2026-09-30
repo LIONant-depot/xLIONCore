@@ -36,6 +36,9 @@ void XecsPlugin_RegisterSystems(xecs::game_mgr::instance& GameMgr) noexcept
         , xlioncore::physics::physics_body_properties
         , xlioncore::physics::physics_shape_properties
         , xlioncore::physics::physics_collider_box
+        , xlioncore::physics::physics_collider_sphere
+        , xlioncore::physics::physics_collider_capsule
+        , xlioncore::physics::physics_collider_cylinder
         , xlioncore::physics::physics_dynamics
         , xlioncore::physics::physics_body
         , xlioncore::demo_share

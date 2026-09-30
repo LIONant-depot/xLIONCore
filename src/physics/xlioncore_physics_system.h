@@ -103,7 +103,7 @@ namespace xlioncore::physics
         // shape the inertia).
         void CreateBody
         ( xecs::component::entity Entity, xlioncore::transform& T, const physics_body_properties& BodyProps
-        , std::span<const box_shape_params> Shapes, physics_body& Body, b3BodyType ResolvedType, float Mass
+        , std::span<const shape_params> Shapes, physics_body& Body, b3BodyType ResolvedType, float Mass
         ) noexcept
         {
             body_create_params Params;
@@ -118,12 +118,12 @@ namespace xlioncore::physics
 
             Body.m_BodyId = m_Backend.CreateBody(Params);
             for( auto& Shape : Shapes )
-                m_Backend.AddBoxShape( Body.m_BodyId, Shape );
+                m_Backend.AddShape( Body.m_BodyId, Shape );
 
             if( ResolvedType == b3_dynamicBody && Mass > 0.0f )
                 m_Backend.SetMass( Body.m_BodyId, Mass );
 
-            Body.m_BodyHalfExtents   = Shapes.empty() ? xmath::fvec3::fromZero() : Shapes[0].m_HalfExtents;
+            Body.m_BodyHalfExtents   = Shapes.empty() ? xmath::fvec3::fromZero() : Shapes[0].BoundsHalfExtents();
             Body.m_CachedBodyType    = ResolvedType;
             Body.m_CachedMass        = Mass;
             Body.m_CachedFriction    = Shapes.empty() ? 0.0f : Shapes[0].m_Friction;
@@ -322,6 +322,9 @@ namespace xlioncore::physics
                        , const physics_body_properties&    BodyProps
                        , physics_body&                     Body
                        , const physics_collider_box*       pBoxes
+                       , const physics_collider_sphere*    pSpheres
+                       , const physics_collider_capsule*   pCapsules
+                       , const physics_collider_cylinder*  pCylinders
                        , const physics_shape_properties*   pLegacyShape       // Pre-collider single box - until scenes are migrated
                        , const physics_dynamics*           pDyn ) noexcept
         {
@@ -329,31 +332,58 @@ namespace xlioncore::physics
             const b3BodyType Type     = system::ResolveBodyType( pDyn, hasComponents<xlioncore::static_tag>(Entity) );
             const bool       bDynamic = (Type == b3_dynamicBody);
 
-            std::vector<box_shape_params> Shapes;
+            std::vector<shape_params> Shapes;
 
-            if( pBoxes )
+            // What every collider shape shares: the material, the body's collision filter, the sensor flag.
+            const auto Add = [&]( shape_params::kind Kind, const material::ref& MaterialRef, bool bIsSensor
+                                , const xmath::fvec3& Center, const xmath::fquat& Orientation ) -> shape_params&
             {
-                for( auto& Box : pBoxes->m_Boxes )
-                {
-                    const auto& Material = Physics.getMaterial( Box.m_Material );
+                const auto& Material = Physics.getMaterial( MaterialRef );
 
-                    box_shape_params& S = Shapes.emplace_back();
-                    S.m_HalfExtents   = Box.m_Size   * T.m_Scale * 0.5f;
-                    S.m_LocalPosition = Box.m_Center * T.m_Scale;
-                    S.m_LocalRotation = Box.m_Orientation;
-                    S.m_Density       = bDynamic ? Material.m_Density : 0.0f;
-                    S.m_Friction      = Material.m_Friction;
-                    S.m_Restitution   = Material.m_Restitution;
-                    S.m_CategoryBits  = BodyProps.m_CategoryBits;
-                    S.m_MaskBits      = BodyProps.m_MaskBits;
-                    S.m_GroupIndex    = BodyProps.m_GroupIndex;
-                    S.m_IsSensor      = Box.m_IsSensor;
+                shape_params& S = Shapes.emplace_back();
+                S.m_Kind          = Kind;
+                S.m_LocalPosition = Center * T.m_Scale;
+                S.m_LocalRotation = Orientation;
+                S.m_Density       = bDynamic ? Material.m_Density : 0.0f;
+                S.m_Friction      = Material.m_Friction;
+                S.m_Restitution   = Material.m_Restitution;
+                S.m_CategoryBits  = BodyProps.m_CategoryBits;
+                S.m_MaskBits      = BodyProps.m_MaskBits;
+                S.m_GroupIndex    = BodyProps.m_GroupIndex;
+                S.m_IsSensor      = bIsSensor;
+                return S;
+            };
+
+            // Scaling rules live in collider_scale (xlioncore_physics_collider.h) - shared with the editor tools.
+            if( pBoxes )
+                for( auto& Box : pBoxes->m_Boxes )
+                    Add( shape_params::kind::BOX, Box.m_Material, Box.m_IsSensor, Box.m_Center, Box.m_Orientation ).m_HalfExtents = Box.m_Size * T.m_Scale * 0.5f;
+
+            if( pSpheres )
+                for( auto& Sphere : pSpheres->m_Spheres )
+                    Add( shape_params::kind::SPHERE, Sphere.m_Material, Sphere.m_IsSensor, Sphere.m_Center, xmath::fquat::fromIdentity() ).m_Radius = collider_scale::Sphere( Sphere, T.m_Scale );
+
+            if( pCapsules )
+                for( auto& Capsule : pCapsules->m_Capsules )
+                {
+                    const auto Size = collider_scale::Capsule( Capsule, T.m_Scale );
+                    auto& S = Add( shape_params::kind::CAPSULE, Capsule.m_Material, Capsule.m_IsSensor, Capsule.m_Center, Capsule.m_Orientation );
+                    S.m_Radius     = Size.m_Radius;
+                    S.m_HalfHeight = Size.m_HalfSpine;
                 }
-            }
+
+            if( pCylinders )
+                for( auto& Cylinder : pCylinders->m_Cylinders )
+                {
+                    const auto Size = collider_scale::Cylinder( Cylinder, T.m_Scale );
+                    auto& S = Add( shape_params::kind::CYLINDER, Cylinder.m_Material, Cylinder.m_IsSensor, Cylinder.m_Center, Cylinder.m_Orientation );
+                    S.m_Radius     = Size.m_Radius;
+                    S.m_HalfHeight = Size.m_HalfHeight;
+                }
 
             if( pLegacyShape )
             {
-                box_shape_params& S = Shapes.emplace_back();
+                shape_params& S = Shapes.emplace_back();
                 S.m_HalfExtents   = T.m_Scale * 0.5f;
                 S.m_LocalPosition = pLegacyShape->LocalPosition();
                 S.m_LocalRotation = pLegacyShape->LocalRotation();

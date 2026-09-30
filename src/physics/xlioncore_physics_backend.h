@@ -22,9 +22,18 @@ namespace xlioncore::physics
         std::uint64_t   m_UserData          = 0;      // The owning entity's handle - maps a Box3D body back to its entity
     };
 
-    struct box_shape_params
+    // One collider shape, already resolved to world scale (the builder applies Transform.Scale). Box uses
+    // m_HalfExtents; Sphere m_Radius; Capsule m_Radius + m_HalfHeight (half the distance between the two
+    // cap centers); Cylinder m_Radius + m_HalfHeight (half the flat-to-flat height). Capsule and Cylinder
+    // stand along the shape's local Y, which m_LocalRotation then orients.
+    struct shape_params
     {
+        enum class kind : std::uint8_t { BOX, SPHERE, CAPSULE, CYLINDER };
+
+        kind            m_Kind              = kind::BOX;
         xmath::fvec3    m_HalfExtents       = xmath::fvec3::fromOne() * 0.5f;
+        float           m_Radius            = 0.5f;
+        float           m_HalfHeight        = 0.5f;
         xmath::fvec3    m_LocalPosition     = {};
         xmath::fquat    m_LocalRotation     = xmath::fquat::fromIdentity();
         float           m_Density           = 0.0f;   // 0 for static/kinematic bodies
@@ -34,6 +43,18 @@ namespace xlioncore::physics
         std::uint64_t   m_MaskBits          = B3_DEFAULT_MASK_BITS;
         std::int32_t    m_GroupIndex        = 0;
         bool            m_IsSensor          = false;
+
+        // Half extents of the shape's local bounding box (before m_LocalRotation) - for diagnostics.
+        xmath::fvec3 BoundsHalfExtents(void) const noexcept
+        {
+            switch (m_Kind)
+            {
+            case kind::SPHERE:   return { m_Radius, m_Radius, m_Radius };
+            case kind::CAPSULE:  return { m_Radius, m_HalfHeight + m_Radius, m_Radius };
+            case kind::CYLINDER: return { m_Radius, m_HalfHeight, m_Radius };
+            default:             return m_HalfExtents;
+            }
+        }
     };
 
     class backend
@@ -43,7 +64,7 @@ namespace xlioncore::physics
         ~backend (void) noexcept;
 
         b3BodyId     CreateBody         ( const body_create_params& Params ) noexcept;     // No shapes yet - add them, then SetMass
-        void         AddBoxShape        ( b3BodyId BodyId, const box_shape_params& Params ) noexcept;
+        void         AddShape           ( b3BodyId BodyId, const shape_params& Params ) noexcept;
         void         Step               (void) noexcept;
         xmath::fvec3 GetPosition        (b3BodyId BodyId) const noexcept;
         xmath::fquat GetRotation        (b3BodyId BodyId) const noexcept;

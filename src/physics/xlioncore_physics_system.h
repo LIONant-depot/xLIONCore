@@ -333,17 +333,14 @@ namespace xlioncore::physics
 
             if( pBoxes )
             {
-                constexpr float DegToRad = 3.14159265358979f / 180.0f;
                 for( auto& Box : pBoxes->m_Boxes )
                 {
                     const auto& Material = Physics.getMaterial( Box.m_Material );
 
                     box_shape_params& S = Shapes.emplace_back();
                     S.m_HalfExtents   = Box.m_Size   * T.m_Scale * 0.5f;
-                    S.m_LocalPosition = Box.m_Offset * T.m_Scale;
-                    S.m_LocalRotation = xmath::fquat{ xmath::radian3{ xmath::radian{ Box.m_RotationDegrees.m_X * DegToRad }
-                                                                    , xmath::radian{ Box.m_RotationDegrees.m_Y * DegToRad }
-                                                                    , xmath::radian{ Box.m_RotationDegrees.m_Z * DegToRad } } };
+                    S.m_LocalPosition = Box.m_Center * T.m_Scale;
+                    S.m_LocalRotation = Box.m_Orientation;
                     S.m_Density       = bDynamic ? Material.m_Density : 0.0f;
                     S.m_Friction      = Material.m_Friction;
                     S.m_Restitution   = Material.m_Restitution;

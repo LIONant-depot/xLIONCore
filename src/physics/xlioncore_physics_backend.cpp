@@ -44,6 +44,7 @@ namespace xlioncore::physics
         BodyDef.angularDamping = Params.m_AngularDamping;
         BodyDef.enableSleep    = Params.m_EnableSleep;
         BodyDef.isBullet       = Params.m_IsBullet;
+        BodyDef.motionLocks    = Params.m_Locks;
         BodyDef.userData       = reinterpret_cast<void*>(static_cast<std::uintptr_t>(Params.m_UserData));
         return b3CreateBody(m_World, &BodyDef);
     }
@@ -158,6 +159,12 @@ namespace xlioncore::physics
     void backend::SetAngularVelocity(b3BodyId BodyId, const xmath::fvec3& Velocity) noexcept
     {
         b3Body_SetAngularVelocity(BodyId, { Velocity.m_X, Velocity.m_Y, Velocity.m_Z });
+    }
+
+    void backend::SetMotionLocks(b3BodyId BodyId, std::uint8_t Bits) noexcept
+    {
+        const b3MotionLocks Locks{ (Bits & 1) != 0, (Bits & 2) != 0, (Bits & 4) != 0, (Bits & 8) != 0, (Bits & 16) != 0, (Bits & 32) != 0 };
+        b3Body_SetMotionLocks(BodyId, Locks);
     }
 
     void backend::SetAwake(b3BodyId BodyId, bool Awake) noexcept

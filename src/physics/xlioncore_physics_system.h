@@ -18,6 +18,8 @@
 #include "xlioncore_physics_backend.h"
 #include "../transform/xlioncore_transform.h"
 #include "../tags/xlioncore_tags.h"
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
 
 namespace xlioncore::physics
@@ -64,6 +66,13 @@ namespace xlioncore::physics
             >;
 
         backend                    m_Backend;
+
+        // The world advances in fixed steps of 1/60 s (backend::Step), as many of them as the real time that has passed asks for:
+        //     Accumulator += Dt;  while( Accumulator >= 1/60 ) { Step(); Accumulator -= 1/60; }
+        // Dt is what the system measures itself between two updates (the ECS has no frame time); a hitch is capped, and a backlog the
+        // machine cannot catch up with is dropped instead of spiralling.
+        std::chrono::steady_clock::time_point m_LastUpdate{};
+        float                                 m_Accumulator = 0.0f;
         xecs::game_mgr::instance&  m_MyGameMgr;   // system::instance's own m_GameMgr is private - see GetComponentPtr's comment
         std::vector<b3BodyId>      m_PendingDestroy;   // queued by destroy_notify::OnNotify, drained in OnPostStructuralChanges
 
@@ -116,6 +125,9 @@ namespace xlioncore::physics
             Params.m_AngularDamping = BodyProps.m_AngularDamping;
             Params.m_EnableSleep    = BodyProps.m_EnableSleep;
             Params.m_IsBullet       = BodyProps.m_EnableContinuousCollision;
+            if (pDyn)                                                           // only a dynamic body has anything to constrain
+                Params.m_Locks = { pDyn->m_ConstraintsTranslationX, pDyn->m_ConstraintsTranslationY, pDyn->m_ConstraintsTranslationZ
+                                 , pDyn->m_ConstraintsRotationX, pDyn->m_ConstraintsRotationY, pDyn->m_ConstraintsRotationZ };
             Params.m_Position       = T.m_Position;
             Params.m_Rotation       = T.m_Rotation;
             Params.m_UserData       = Entity.m_Value;
@@ -138,6 +150,7 @@ namespace xlioncore::physics
 
             Body.m_CachedBodyType    = ResolvedType;
             Body.m_CachedMass        = Mass;
+            Body.m_CachedConstraints = pDyn ? pDyn->constraintBits() : 0;
 
             T.m_DirtyToPhysics = 0;
         }
@@ -246,6 +259,13 @@ namespace xlioncore::physics
 
                 if (pDyn && B3_IS_NON_NULL(Body.m_BodyId) && ResolvedType == b3_dynamicBody)
                 {
+                    // Constraints are live: a change made while playing reaches the body at once.
+                    if (const std::uint8_t Bits = pDyn->constraintBits(); Bits != Body.m_CachedConstraints)
+                    {
+                        m_Backend.SetMotionLocks(Body.m_BodyId, Bits);
+                        m_Backend.SetAwake(Body.m_BodyId, true);
+                        Body.m_CachedConstraints = Bits;
+                    }
                     if (pDyn->m_Force.m_X != 0.0f || pDyn->m_Force.m_Y != 0.0f || pDyn->m_Force.m_Z != 0.0f)
                         m_Backend.ApplyForceToCenter(Body.m_BodyId, pDyn->m_Force);
                     if (pDyn->m_Torque.m_X != 0.0f || pDyn->m_Torque.m_Y != 0.0f || pDyn->m_Torque.m_Z != 0.0f)
@@ -284,7 +304,23 @@ namespace xlioncore::physics
             // same-frame-or-earlier kill never gets one more simulated tick. See QueueDestroy's comment.
             DrainPendingDestroy();
 
-            m_Backend.Step();
+            {
+                constexpr float kFixedDt = 1.0f / 60.0f;
+                constexpr int   kMaxSteps = 4;
+                const auto Now = std::chrono::steady_clock::now();
+                const float Dt = m_LastUpdate.time_since_epoch().count() == 0 ? kFixedDt : std::chrono::duration<float>(Now - m_LastUpdate).count();
+                m_LastUpdate   = Now;
+                m_Accumulator += std::min(Dt, 0.1f);
+
+                int nSteps = 0;
+                while (m_Accumulator >= kFixedDt && nSteps < kMaxSteps)
+                {
+                    m_Backend.Step();
+                    m_Accumulator -= kFixedDt;
+                    ++nSteps;
+                }
+                if (nSteps == kMaxSteps) m_Accumulator = 0.0f;
+            }
 
             Foreach(S, [&]( xlioncore::transform& T
                           , physics_body& Body

@@ -75,6 +75,22 @@ namespace xlioncore::physics
         xmath::fvec3    m_Force           = {};
         xmath::fvec3    m_Torque          = {};
 
+        // Constraints/Translation, Constraints/Rotation: the axes (of the world) this body may not move along / turn around. A character that
+        // must stay upright locks the three rotations; a puck that only slides on a table locks the position along up.
+        bool            m_ConstraintsTranslationX = false;
+        bool            m_ConstraintsTranslationY = false;
+        bool            m_ConstraintsTranslationZ = false;
+        bool            m_ConstraintsRotationX = false;
+        bool            m_ConstraintsRotationY = false;
+        bool            m_ConstraintsRotationZ = false;
+
+        // The six constraints as bits (translation X Y Z, rotation X Y Z): what the system compares with what it last gave the body.
+        std::uint8_t constraintBits() const noexcept
+        {
+            return static_cast<std::uint8_t>( (m_ConstraintsTranslationX << 0) | (m_ConstraintsTranslationY << 1) | (m_ConstraintsTranslationZ << 2)
+                                            | (m_ConstraintsRotationX    << 3) | (m_ConstraintsRotationY    << 4) | (m_ConstraintsRotationZ    << 5) );
+        }
+
         XPROPERTY_DEF
         ( "PhysicsDynamics", physics_dynamics
         , obj_member<"LinearVelocity",  &physics_dynamics::m_LinearVelocity>
@@ -82,6 +98,18 @@ namespace xlioncore::physics
         , obj_member<"Mass",            &physics_dynamics::m_Mass>
         , obj_member<"Force",           &physics_dynamics::m_Force>
         , obj_member<"Torque",          &physics_dynamics::m_Torque>
+        , obj_scope<"Constraints"
+            , obj_scope<"Translation", xproperty::settings::vector3_group
+                , obj_member<"X", &physics_dynamics::m_ConstraintsTranslationX, member_flags<flags::NO_BOOL_TEXT>>
+                , obj_member<"Y", &physics_dynamics::m_ConstraintsTranslationY, member_flags<flags::NO_BOOL_TEXT>>
+                , obj_member<"Z", &physics_dynamics::m_ConstraintsTranslationZ, member_flags<flags::NO_BOOL_TEXT>>
+                >
+            , obj_scope<"Rotation", xproperty::settings::vector3_group
+                , obj_member<"X", &physics_dynamics::m_ConstraintsRotationX, member_flags<flags::NO_BOOL_TEXT>>
+                , obj_member<"Y", &physics_dynamics::m_ConstraintsRotationY, member_flags<flags::NO_BOOL_TEXT>>
+                , obj_member<"Z", &physics_dynamics::m_ConstraintsRotationZ, member_flags<flags::NO_BOOL_TEXT>>
+                >
+            >
         )
     };
     XSCRIPT_REGISTER_COMPONENT(physics_dynamics, "Physics", 30)
@@ -98,6 +126,7 @@ namespace xlioncore::physics
         b3BodyId        m_BodyId            = b3_nullBodyId;
         b3BodyType      m_CachedBodyType    = b3_dynamicBody;
         float           m_CachedMass        = 0.0f;
+        std::uint8_t    m_CachedConstraints = 0;        // physics_dynamics::constraintBits() as the body last got them (a change is applied live)
 
         // Read-only, not hidden: not being editable doesn't mean not worth seeing - this component
         // exists partly for debugging, so the live handle/cache is exposed via SHOW_READONLY instead

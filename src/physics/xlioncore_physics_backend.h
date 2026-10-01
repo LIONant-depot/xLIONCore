@@ -17,6 +17,7 @@ namespace xlioncore::physics
         float           m_AngularDamping    = 0.0f;
         bool            m_EnableSleep       = true;
         bool            m_IsBullet          = false;
+        b3MotionLocks   m_Locks             = {};     // axes the body may not move along / turn around
         xmath::fvec3    m_Position          = {};
         xmath::fquat    m_Rotation          = xmath::fquat::fromIdentity();
         std::uint64_t   m_UserData          = 0;      // The owning entity's handle - maps a Box3D body back to its entity
@@ -62,6 +63,7 @@ namespace xlioncore::physics
         void         SetLinearVelocity  (b3BodyId BodyId, const xmath::fvec3& Velocity) noexcept;
         void         SetAngularVelocity (b3BodyId BodyId, const xmath::fvec3& Velocity) noexcept;
         void         SetAwake           (b3BodyId BodyId, bool Awake) noexcept;
+        void         SetMotionLocks     (b3BodyId BodyId, std::uint8_t ConstraintBits) noexcept;   // bits as physics_dynamics::constraintBits()
         void         SetMass            (b3BodyId BodyId, float Mass) noexcept;
         void         SetBodyType        (b3BodyId BodyId, b3BodyType Type) noexcept;
         void         ApplyForceToCenter (b3BodyId BodyId, const xmath::fvec3& Force) noexcept;

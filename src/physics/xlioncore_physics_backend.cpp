@@ -116,11 +116,10 @@ namespace xlioncore::physics
         }
     }
 
-    void backend::Step(void) noexcept
+    void backend::Step(float FixedDeltaTime) noexcept
     {
-        constexpr float FixedDt      = 1.0f / 60.0f;
-        constexpr int   SubStepCount = 4;
-        b3World_Step(m_World, FixedDt, SubStepCount);
+        constexpr int SubStepCount = 4;
+        b3World_Step(m_World, FixedDeltaTime, SubStepCount);
     }
 
     xmath::fvec3 backend::GetPosition(b3BodyId BodyId) const noexcept

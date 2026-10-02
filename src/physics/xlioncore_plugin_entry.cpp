@@ -68,7 +68,8 @@ namespace xlioncore::physics
     , const xmath::fquat&        Rotation
     ) noexcept
     {
-        auto* pSystem = GameMgr.getUserData<system>();
+        auto* pGame   = game::From(GameMgr);
+        auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
         if (!pSystem) return false;
 
         auto* pBody = GetComponentPtr<physics_body>(GameMgr, Entity);

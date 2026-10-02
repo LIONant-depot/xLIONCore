@@ -54,7 +54,7 @@ namespace xlioncore::physics
 
         b3BodyId     CreateBody         ( const body_create_params& Params ) noexcept;     // No shapes yet - add them, then SetMass
         void         AddShape           ( b3BodyId BodyId, const shape_params& Params ) noexcept;
-        void         Step               (void) noexcept;
+        void         Step               (float FixedDeltaTime) noexcept;
         xmath::fvec3 GetPosition        (b3BodyId BodyId) const noexcept;
         xmath::fquat GetRotation        (b3BodyId BodyId) const noexcept;
         xmath::fvec3 GetLinearVelocity  (b3BodyId BodyId) const noexcept;

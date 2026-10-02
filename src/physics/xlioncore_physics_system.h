@@ -18,6 +18,7 @@
 #include "xlioncore_physics_backend.h"
 #include "../transform/xlioncore_transform.h"
 #include "../tags/xlioncore_tags.h"
+#include "../game/xlioncore_game.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -67,12 +68,6 @@ namespace xlioncore::physics
 
         backend                    m_Backend;
 
-        // The world advances in fixed steps of 1/60 s (backend::Step), as many of them as the real time that has passed asks for:
-        //     Accumulator += Dt;  while( Accumulator >= 1/60 ) { Step(); Accumulator -= 1/60; }
-        // Dt is what the system measures itself between two updates (the ECS has no frame time); a hitch is capped, and a backlog the
-        // machine cannot catch up with is dropped instead of spiralling.
-        std::chrono::steady_clock::time_point m_LastUpdate{};
-        float                                 m_Accumulator = 0.0f;
         xecs::game_mgr::instance&  m_MyGameMgr;   // system::instance's own m_GameMgr is private - see GetComponentPtr's comment
         std::vector<b3BodyId>      m_PendingDestroy;   // queued by destroy_notify::OnNotify, drained in OnPostStructuralChanges
 
@@ -80,17 +75,16 @@ namespace xlioncore::physics
 
         void OnCreate(void) noexcept
         {
-            // Lets cross-module callers (xlioncore_physics_api.h's exported functions, compiled into
-            // THIS DLL, so same-module access to m_Backend's non-exported methods) reach the live
-            // instance via GameMgr.getUserData<system>() instead of findSystem<system>() - either
-            // would work here, but userdata is the general mechanism now, not physics-specific.
-            m_MyGameMgr.setUserData(this);
+            // The game this world belongs to (the user data of the game manager) keeps the live physics: cross-module callers
+            // (xlioncore_physics_api.h's exported functions, compiled into THIS DLL, so same-module access to m_Backend's
+            // non-exported methods) reach it through Game.m_pPhysics.
+            if (auto* pGame = game::From(m_MyGameMgr)) pGame->m_pPhysics = this;
         }
 
         void OnDestroy(void) noexcept
         {
-            if (m_MyGameMgr.getUserData<system>() == this)
-                m_MyGameMgr.setUserData(nullptr);
+            if (auto* pGame = game::From(m_MyGameMgr); pGame && pGame->m_pPhysics == this)
+                pGame->m_pPhysics = nullptr;
         }
 
         static b3BodyType ResolveBodyType(const physics_dynamics* pDyn, bool bIsStatic) noexcept
@@ -304,23 +298,10 @@ namespace xlioncore::physics
             // same-frame-or-earlier kill never gets one more simulated tick. See QueueDestroy's comment.
             DrainPendingDestroy();
 
-            {
-                constexpr float kFixedDt = 1.0f / 60.0f;
-                constexpr int   kMaxSteps = 4;
-                const auto Now = std::chrono::steady_clock::now();
-                const float Dt = m_LastUpdate.time_since_epoch().count() == 0 ? kFixedDt : std::chrono::duration<float>(Now - m_LastUpdate).count();
-                m_LastUpdate   = Now;
-                m_Accumulator += std::min(Dt, 0.1f);
-
-                int nSteps = 0;
-                while (m_Accumulator >= kFixedDt && nSteps < kMaxSteps)
-                {
-                    m_Backend.Step();
-                    m_Accumulator -= kFixedDt;
-                    ++nSteps;
-                }
-                if (nSteps == kMaxSteps) m_Accumulator = 0.0f;
-            }
+            // The fixed steps the game's time says are due this frame (see game_time): the world takes exactly that many.
+            if (const auto* pGame = game::From(m_MyGameMgr))
+                for (int i = 0; i < pGame->m_Time.m_FixedSteps; ++i)
+                    m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
 
             Foreach(S, [&]( xlioncore::transform& T
                           , physics_body& Body

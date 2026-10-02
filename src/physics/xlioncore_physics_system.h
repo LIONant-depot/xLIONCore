@@ -68,6 +68,12 @@ namespace xlioncore::physics
 
         backend                    m_Backend;
 
+        // The places where other systems connect to the physics: they run once for each fixed step.
+        static constexpr std::array<xecs::system::connector, 2> connectors_v
+        { { { "Before Step", "Runs once for every fixed step, right before the world takes it: where the systems that push on bodies (forces, kicks, a person running) belong" }
+          , { "After Step",  "Runs once for every fixed step, right after the world took it: where the systems that read what the step did belong" }
+        } };
+
         xecs::game_mgr::instance&  m_MyGameMgr;   // system::instance's own m_GameMgr is private - see GetComponentPtr's comment
         std::vector<b3BodyId>      m_PendingDestroy;   // queued by destroy_notify::OnNotify, drained in OnPostStructuralChanges
 
@@ -215,93 +221,100 @@ namespace xlioncore::physics
             float yMin = 1e9f, yMax = -1e9f;
             float yFirstDyn = -999.f;
 
-            Foreach(S, [&]( const xecs::component::entity& Entity
-                          , physics_body& Body
-                          , physics_dynamics* pDyn ) noexcept
+            // The fixed steps the game's time says are due this frame (see game_time): the world takes exactly that many, and the systems
+            // connected to this one run around each of them (Before Step: they push on the bodies, After Step: they read what happened).
+            const auto* pGame = game::From(m_MyGameMgr);
+            const int   nSteps = pGame ? pGame->m_Time.m_FixedSteps : 0;
+            for (int Step = 0; Step < nSteps; ++Step)
             {
-                // A sibling killed earlier in THIS SAME pass (a future physics-driven-kill feature,
-                // e.g. culling) is still zombie, not yet reclaimed - S was snapshotted before this
-                // Foreach started. Nothing to do for something already dead: don't recreate, don't
-                // apply forces.
-                if (Entity.isZombie()) return;
-
-                ++nEnt;
-                if (pDyn) ++nHasDynComp;
-
-                const b3BodyType ResolvedType = ResolveBodyType(pDyn, false);   // never static here - excluded from this query
-
-                if (ResolvedType == b3_dynamicBody) ++nDyn;
-                else ++nKin;
-
-                // No body = its builder never ran (or failed) - nothing here can create one, the
-                // builder components it would need are gone. See body_builder.
-                if (B3_IS_NULL(Body.m_BodyId))
+                RunConnector(0);
+                nEnt = nNull = nDyn = nKin = nHasDynComp = 0;
+                Foreach(S, [&]( const xecs::component::entity& Entity
+                              , physics_body& Body
+                              , physics_dynamics* pDyn ) noexcept
                 {
-                    ++nNull;
-                    return;
-                }
-
-                // Static demotion while Playing, or physics_dynamics added/removed.
-                if (Body.m_CachedBodyType != ResolvedType)
-                {
-                    m_Backend.SetBodyType(Body.m_BodyId, ResolvedType);
-                    if (ResolvedType == b3_dynamicBody) m_Backend.SetMass(Body.m_BodyId, pDyn->m_Mass);
-                    m_Backend.SetAwake(Body.m_BodyId, true);
-                    Body.m_CachedBodyType = ResolvedType;
-                    Body.m_CachedMass     = pDyn ? pDyn->m_Mass : 0.0f;
-                }
-
-                if (pDyn && B3_IS_NON_NULL(Body.m_BodyId) && ResolvedType == b3_dynamicBody)
-                {
-                    // Constraints are live: a change made while playing reaches the body at once.
-                    if (const std::uint8_t Bits = pDyn->constraintBits(); Bits != Body.m_CachedConstraints)
-                    {
-                        m_Backend.SetMotionLocks(Body.m_BodyId, Bits);
-                        m_Backend.SetAwake(Body.m_BodyId, true);
-                        Body.m_CachedConstraints = Bits;
-                    }
-                    if (pDyn->m_Force.m_X != 0.0f || pDyn->m_Force.m_Y != 0.0f || pDyn->m_Force.m_Z != 0.0f)
-                        m_Backend.ApplyForceToCenter(Body.m_BodyId, pDyn->m_Force);
-                    if (pDyn->m_Torque.m_X != 0.0f || pDyn->m_Torque.m_Y != 0.0f || pDyn->m_Torque.m_Z != 0.0f)
-                        m_Backend.ApplyTorque(Body.m_BodyId, pDyn->m_Torque);
-                    pDyn->m_Force  = {};
-                    pDyn->m_Torque = {};
-                }
-            });
-
-            // Editor/gameplay Dirty pose pushes: a dynamic body ignores these entirely (direct user
-            // decision - a live body is physics-authoritative; a caller that really wants to move one
-            // calls the physics system directly, see TeleportBody/xscene's TeleportDynamicIfPlaying) -
-            // scoped out at the QUERY level (none_of<physics_dynamics>), not a runtime check, so a scene with
-            // many dynamic crates never pays even one branch for this per entity, per frame. Only
-            // entities visited here are guaranteed kinematic (not static - excluded already; not
-            // dynamic - excluded here) by construction.
-            {
-                xecs::query::instance DirtyQuery;
-                DirtyQuery.m_Must.AddFromComponents<xlioncore::transform, physics_body>();
-                DirtyQuery.m_NoneOf.AddFromComponents<xlioncore::static_tag, physics_dynamics>();
-                auto DirtySet = Search(DirtyQuery);
-
-                Foreach(DirtySet, [&](const xecs::component::entity& Entity, xlioncore::transform& T, physics_body& Body) noexcept
-                {
+                    // A sibling killed earlier in THIS SAME pass (a future physics-driven-kill feature,
+                    // e.g. culling) is still zombie, not yet reclaimed - S was snapshotted before this
+                    // Foreach started. Nothing to do for something already dead: don't recreate, don't
+                    // apply forces.
                     if (Entity.isZombie()) return;
-                    if (B3_IS_NULL(Body.m_BodyId)) return;   // not created yet this frame - the main pass above will
-                    if (!T.m_DirtyToPhysics) return;
 
-                    m_Backend.SetTransform(Body.m_BodyId, T.m_Position, T.m_Rotation);
-                    T.m_DirtyToPhysics = 0;
+                    ++nEnt;
+                    if (pDyn) ++nHasDynComp;
+
+                    const b3BodyType ResolvedType = ResolveBodyType(pDyn, false);   // never static here - excluded from this query
+
+                    if (ResolvedType == b3_dynamicBody) ++nDyn;
+                    else ++nKin;
+
+                    // No body = its builder never ran (or failed) - nothing here can create one, the
+                    // builder components it would need are gone. See body_builder.
+                    if (B3_IS_NULL(Body.m_BodyId))
+                    {
+                        ++nNull;
+                        return;
+                    }
+
+                    // Static demotion while Playing, or physics_dynamics added/removed.
+                    if (Body.m_CachedBodyType != ResolvedType)
+                    {
+                        m_Backend.SetBodyType(Body.m_BodyId, ResolvedType);
+                        if (ResolvedType == b3_dynamicBody) m_Backend.SetMass(Body.m_BodyId, pDyn->m_Mass);
+                        m_Backend.SetAwake(Body.m_BodyId, true);
+                        Body.m_CachedBodyType = ResolvedType;
+                        Body.m_CachedMass     = pDyn ? pDyn->m_Mass : 0.0f;
+                    }
+
+                    if (pDyn && B3_IS_NON_NULL(Body.m_BodyId) && ResolvedType == b3_dynamicBody)
+                    {
+                        // Constraints are live: a change made while playing reaches the body at once.
+                        if (const std::uint8_t Bits = pDyn->constraintBits(); Bits != Body.m_CachedConstraints)
+                        {
+                            m_Backend.SetMotionLocks(Body.m_BodyId, Bits);
+                            m_Backend.SetAwake(Body.m_BodyId, true);
+                            Body.m_CachedConstraints = Bits;
+                        }
+                        if (pDyn->m_Force.m_X != 0.0f || pDyn->m_Force.m_Y != 0.0f || pDyn->m_Force.m_Z != 0.0f)
+                            m_Backend.ApplyForceToCenter(Body.m_BodyId, pDyn->m_Force);
+                        if (pDyn->m_Torque.m_X != 0.0f || pDyn->m_Torque.m_Y != 0.0f || pDyn->m_Torque.m_Z != 0.0f)
+                            m_Backend.ApplyTorque(Body.m_BodyId, pDyn->m_Torque);
+                        pDyn->m_Force  = {};
+                        pDyn->m_Torque = {};
+                    }
                 });
+
+                // Editor/gameplay Dirty pose pushes: a dynamic body ignores these entirely (direct user
+                // decision - a live body is physics-authoritative; a caller that really wants to move one
+                // calls the physics system directly, see TeleportBody/xscene's TeleportDynamicIfPlaying) -
+                // scoped out at the QUERY level (none_of<physics_dynamics>), not a runtime check, so a scene with
+                // many dynamic crates never pays even one branch for this per entity, per frame. Only
+                // entities visited here are guaranteed kinematic (not static - excluded already; not
+                // dynamic - excluded here) by construction.
+                {
+                    xecs::query::instance DirtyQuery;
+                    DirtyQuery.m_Must.AddFromComponents<xlioncore::transform, physics_body>();
+                    DirtyQuery.m_NoneOf.AddFromComponents<xlioncore::static_tag, physics_dynamics>();
+                    auto DirtySet = Search(DirtyQuery);
+
+                    Foreach(DirtySet, [&](const xecs::component::entity& Entity, xlioncore::transform& T, physics_body& Body) noexcept
+                    {
+                        if (Entity.isZombie()) return;
+                        if (B3_IS_NULL(Body.m_BodyId)) return;   // not created yet this frame - the main pass above will
+                        if (!T.m_DirtyToPhysics) return;
+
+                        m_Backend.SetTransform(Body.m_BodyId, T.m_Position, T.m_Rotation);
+                        T.m_DirtyToPhysics = 0;
+                    });
+                }
+
+                // Drain anything queued for destroy since the last drain - including by this very Foreach,
+                // if a future feature has physics kill an entity reactively - strictly before Step(), so a
+                // same-frame-or-earlier kill never gets one more simulated tick. See QueueDestroy's comment.
+                DrainPendingDestroy();
+
+                m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
+                RunConnector(1);
             }
-
-            // Drain anything queued for destroy since the last drain - including by this very Foreach,
-            // if a future feature has physics kill an entity reactively - strictly before Step(), so a
-            // same-frame-or-earlier kill never gets one more simulated tick. See QueueDestroy's comment.
-            DrainPendingDestroy();
-
-            // The fixed steps the game's time says are due this frame (see game_time): the world takes exactly that many.
-            if (const auto* pGame = game::From(m_MyGameMgr))
-                for (int i = 0; i < pGame->m_Time.m_FixedSteps; ++i)
-                    m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
 
             Foreach(S, [&]( xlioncore::transform& T
                           , physics_body& Body
@@ -324,7 +337,7 @@ namespace xlioncore::physics
                 }
             });
 
-            if (bLog)
+            if (bLog && nSteps > 0)
             {
                 std::printf("[Physics] tick=%d ents=%d hasDyn=%d types(d/k)=%d/%d null=%d yRange=[%.3f,%.3f] yDyn0=%.3f pendingDestroy=%zu\n"
                     , s_Tick, nEnt, nHasDynComp, nDyn, nKin, nNull

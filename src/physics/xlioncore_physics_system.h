@@ -316,6 +316,9 @@ namespace xlioncore::physics
                 RunConnector(1);
             }
 
+            // A frame without a fixed step changed nothing in the world: reading the poses back then would overwrite what was edited since
+            // the last step (an edit reaches the body in the next step's Dirty push, above).
+            if (nSteps > 0)
             Foreach(S, [&]( xlioncore::transform& T
                           , physics_body& Body
                           , physics_dynamics* pDyn ) noexcept

@@ -120,6 +120,10 @@ namespace xlioncore
 
         void DestroyWorld() noexcept { m_pGameMgr.reset(); m_pPhysics = nullptr; }
 
+        // A world whose systems crashed while they were being registered is half built: destroying it would run the destructors of
+        // what the crash left behind, so it is leaked instead (it holds nothing yet: no level is loaded when systems register).
+        void AbandonWorld() noexcept { (void)m_pGameMgr.release(); m_pPhysics = nullptr; }
+
         // One frame: the time moves (by the real time since the last call), then the game manager runs its systems.
         void Run() noexcept
         {

@@ -5,6 +5,7 @@
 #include "xlioncore_physics_api.h"
 #include "../transform/xlioncore_transform.h"
 #include "../demo/xlioncore_demo_share.h"
+#include "../demo/xlioncore_demo_systems.h"
 #include "xecs_plugin_api.h"
 #include "plugins/xscript_module.plugin/source/Runtime/xscript_registration.h"
 

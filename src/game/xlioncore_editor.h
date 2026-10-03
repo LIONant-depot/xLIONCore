@@ -20,7 +20,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 1;
+        static constexpr std::uint32_t kVersion = 2;
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -35,6 +35,12 @@ namespace xlioncore
         virtual void DestroyWorld() noexcept = 0;
         virtual void AbandonWorld() noexcept = 0;                         // leaks a world whose systems crashed while registering: destroying what the crash left behind is worse
         virtual xecs::game_mgr::instance* Native() noexcept = 0;          // the world of this copy of the core (null when there is none): for what is not behind the interface yet
+
+        // ---- the registry of this copy of the core. Game.dll and the render DLL register themselves through their own XecsPlugin_* entry points, called with Native(): they import the core they were built for.
+        virtual void RegisterHostComponents() noexcept = 0;               // into the world: the editor's components (prefab instances, entity references) and the core's own
+        virtual void RegisterHostSystems() noexcept = 0;                  // the systems of the core (the demo ones, the physics), which locks the component types
+        virtual void UnregisterPlugin(xecs::plugin::token Token) noexcept = 0;   // every world is gone: the registry goes back to nothing (plugin reload)
+        virtual void ResetRegistrations() noexcept = 0;
 
         // ---- running it
         virtual void Run() noexcept = 0;                                  // one frame: the time moves by the real time since the last call, then the systems run

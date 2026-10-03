@@ -2,10 +2,11 @@
 #define XLIONCORE_PHYSICS_BACKEND_H
 #pragma once
 
-// Persistent b3WorldId behind a plain class - no xecs types. Creates multi-shape-ready bodies
+// Persistent b3WorldId behind a plain class. Creates multi-shape-ready bodies
 // (body first, then hull shape); mass from physics_dynamics (SetMassData) when m_Mass > 0, else shapes.
 #include "dependencies/xmath/source/xmath.h"
 #include <box3d/box3d.h>
+#include "xlioncore_physics_events.h"
 #include <cstdint>
 #include <vector>
 
@@ -45,13 +46,7 @@ namespace xlioncore::physics
         std::uint64_t   m_MaskBits          = B3_DEFAULT_MASK_BITS;
         std::int32_t    m_GroupIndex        = 0;
         bool            m_IsSensor          = false;
-    };
-
-    // Two shapes that started or stopped overlapping, one of them a sensor: the entity handles that were stored in the user data of their bodies (invalid_entity_v when a body has none).
-    struct sensor_touch
-    {
-        std::uint64_t   m_Sensor    = 0xffffffffffffffffull;
-        std::uint64_t   m_Visitor   = 0xffffffffffffffffull;
+        bool            m_ContactEvents     = false;    // report the touches and the hits of this shape (a touch is reported when either of the two shapes asks)
     };
 
     class backend
@@ -82,9 +77,12 @@ namespace xlioncore::physics
         // query result checking Entity.isZombie() once queries actually exist in this engine.
         void         MakeBodyUnqueryable(b3BodyId BodyId) noexcept;
         void         DestroyBody        (b3BodyId BodyId) noexcept;
-        // What the last Step changed between sensors and the shapes in them, as entities (the user data of each body), sorted so that two runs of the same game report the same order. An end
-        // event whose shape (or body) was destroyed since is dropped: it has no entity to name any more.
+        // What the last Step changed between sensors and the shapes in them (Box3D's sensor events with the entity of each body, its user data), sorted so that two runs of the same game report the
+        // same order. An end event whose shape (or body) was destroyed since is dropped: it has no entity to name any more.
         void         DrainSensorEvents  ( std::vector<sensor_touch>& Begin, std::vector<sensor_touch>& End ) const noexcept;
+        // The same for the shapes that asked for contact events: who started touching, who stopped, who hit (faster than the world's hit threshold), sorted by (A, B). Pairs with a body without an entity
+        // are dropped.
+        void         DrainContactEvents ( std::vector<contact_touch>& Begin, std::vector<contact_touch>& End, std::vector<contact_hit>& Hit ) const noexcept;
 
     private:
         b3WorldId m_World;

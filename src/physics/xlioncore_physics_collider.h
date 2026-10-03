@@ -12,7 +12,7 @@
 //   PhysicsColliderCylinder  Cylinders[]  Center, Orientation, Radius, Height       (axis = the shape's local Y)
 //
 // Every shape also has Material (a PhysicsMaterial asset, empty = friction 0.6 / restitution 0) and
-// IsSensor. Several shapes in one array, or several collider components on one entity, make a compound
+// IsSensor and ContactEvents (off by default: touches and hits of this shape are reported to the game). Several shapes in one array, or several collider components on one entity, make a compound
 // body. All positions are in the body's frame (Transform Position/Rotation) and every size is multiplied
 // by Transform.Scale, so a collider follows the entity when it is scaled:
 //     Box       Size * Scale, per axis
@@ -75,6 +75,7 @@ namespace xlioncore::physics
         xmath::fvec3    m_Size            = xmath::fvec3::fromOne();
         material::ref   m_Material        = {};
         bool            m_IsSensor        = false;
+        bool            m_ContactEvents   = false;     // tell the game about touches and hits of this shape (see contact_begin_event)
 
         XPROPERTY_DEF
         ( "ColliderBox", collider_box_shape
@@ -83,6 +84,7 @@ namespace xlioncore::physics
         , obj_member<"Size",     &collider_box_shape::m_Size>
         , obj_member<"Material", &collider_box_shape::m_Material>
         , obj_member<"IsSensor", &collider_box_shape::m_IsSensor>
+        , obj_member<"ContactEvents", &collider_box_shape::m_ContactEvents>
         )
     };
     XPROPERTY_REG(collider_box_shape)
@@ -116,6 +118,7 @@ namespace xlioncore::physics
         float           m_Radius          = 0.5f;     // = the Sphere primitive at Scale 1
         material::ref   m_Material        = {};
         bool            m_IsSensor        = false;
+        bool            m_ContactEvents   = false;     // tell the game about touches and hits of this shape (see contact_begin_event)
 
         XPROPERTY_DEF
         ( "ColliderSphere", collider_sphere_shape
@@ -123,6 +126,7 @@ namespace xlioncore::physics
         , obj_member<"Radius",   &collider_sphere_shape::m_Radius>
         , obj_member<"Material", &collider_sphere_shape::m_Material>
         , obj_member<"IsSensor", &collider_sphere_shape::m_IsSensor>
+        , obj_member<"ContactEvents", &collider_sphere_shape::m_ContactEvents>
         )
     };
     XPROPERTY_REG(collider_sphere_shape)
@@ -158,6 +162,7 @@ namespace xlioncore::physics
         float           m_Height          = 1.0f;
         material::ref   m_Material        = {};
         bool            m_IsSensor        = false;
+        bool            m_ContactEvents   = false;     // tell the game about touches and hits of this shape (see contact_begin_event)
 
         XPROPERTY_DEF
         ( "ColliderCapsule", collider_capsule_shape
@@ -167,6 +172,7 @@ namespace xlioncore::physics
         , obj_member<"Height", &collider_capsule_shape::m_Height>
         , obj_member<"Material", &collider_capsule_shape::m_Material>
         , obj_member<"IsSensor", &collider_capsule_shape::m_IsSensor>
+        , obj_member<"ContactEvents", &collider_capsule_shape::m_ContactEvents>
         )
     };
     XPROPERTY_REG(collider_capsule_shape)
@@ -201,6 +207,7 @@ namespace xlioncore::physics
         float           m_Height          = 1.0f;
         material::ref   m_Material        = {};
         bool            m_IsSensor        = false;
+        bool            m_ContactEvents   = false;     // tell the game about touches and hits of this shape (see contact_begin_event)
 
         XPROPERTY_DEF
         ( "ColliderCylinder", collider_cylinder_shape
@@ -210,6 +217,7 @@ namespace xlioncore::physics
         , obj_member<"Height", &collider_cylinder_shape::m_Height>
         , obj_member<"Material", &collider_cylinder_shape::m_Material>
         , obj_member<"IsSensor", &collider_cylinder_shape::m_IsSensor>
+        , obj_member<"ContactEvents", &collider_cylinder_shape::m_ContactEvents>
         )
     };
     XPROPERTY_REG(collider_cylinder_shape)

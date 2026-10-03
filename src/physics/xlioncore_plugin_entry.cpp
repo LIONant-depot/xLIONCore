@@ -45,7 +45,7 @@ void XecsPlugin_RegisterSystems(xecs::game_mgr::instance& GameMgr) noexcept
         >();
 
     // The events of the physics are registered before any system (a system that listens to one finds it there).
-    GameMgr.RegisterGlobalEvents<xlioncore::physics::sensor_begin_event, xlioncore::physics::sensor_end_event>();
+    GameMgr.RegisterGlobalEvents<xlioncore::physics::sensor_begin_event, xlioncore::physics::sensor_end_event, xlioncore::physics::contact_begin_event, xlioncore::physics::contact_end_event, xlioncore::physics::contact_hit_event>();
 
     for (auto* p = xscript::self_registration<xscript::system_entry>::s_pHead; p; p = p->m_pNext)
         p->m_Value.m_pRegisterFn(GameMgr);

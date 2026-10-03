@@ -71,6 +71,8 @@ namespace xlioncore::physics
         ShapeDef.filter.groupIndex          = Params.m_GroupIndex;
         ShapeDef.isSensor                   = Params.m_IsSensor;
         ShapeDef.enableSensorEvents         = true;     // every shape may enter a sensor (the filter decides which do); a sensor reports only the shapes that have this
+        ShapeDef.enableContactEvents        = Params.m_ContactEvents;
+        ShapeDef.enableHitEvents            = Params.m_ContactEvents;
         ShapeDef.updateBodyMass             = true;
 
         const xmath::fvec3& P = Params.m_LocalPosition;
@@ -231,16 +233,54 @@ namespace xlioncore::physics
         {
             for (int i = 0; i < Count; ++i)
             {
-                const sensor_touch Touch{ EntityOfShape(pEvents[i].sensorShapeId), EntityOfShape(pEvents[i].visitorShapeId) };
-                if (Touch.m_Sensor != kNone && Touch.m_Visitor != kNone) Out.push_back(Touch);
+                const sensor_touch Touch{ xecs::component::entity{ EntityOfShape(pEvents[i].sensorShapeId) }, xecs::component::entity{ EntityOfShape(pEvents[i].visitorShapeId) }
+                                        , pEvents[i].sensorShapeId, pEvents[i].visitorShapeId };
+                if (Touch.m_Sensor.m_Value != kNone && Touch.m_Visitor.m_Value != kNone) Out.push_back(Touch);
             }
             std::sort(Out.begin(), Out.end(), [](const sensor_touch& A, const sensor_touch& B) noexcept
             {
-                return A.m_Sensor != B.m_Sensor ? A.m_Sensor < B.m_Sensor : A.m_Visitor < B.m_Visitor;
+                return A.m_Sensor.m_Value != B.m_Sensor.m_Value ? A.m_Sensor.m_Value < B.m_Sensor.m_Value : A.m_Visitor.m_Value < B.m_Visitor.m_Value;
             });
         };
         Collect(Events.beginEvents, Events.beginCount, Begin);
         Collect(Events.endEvents,   Events.endCount,   End);
+    }
+
+    void backend::DrainContactEvents(std::vector<contact_touch>& Begin, std::vector<contact_touch>& End, std::vector<contact_hit>& Hit) const noexcept
+    {
+        Begin.clear();
+        End.clear();
+        Hit.clear();
+        constexpr std::uint64_t kNone = 0xffffffffffffffffull;
+        const b3ContactEvents Events = b3World_GetContactEvents(m_World);
+
+        // Box3D's order of the pair is kept (A, B); the events of one step are only sorted by entity so that two runs of the same game report the same order.
+        const auto Collect = [&](auto* pEvents, int Count, auto&& Make, auto& Out) noexcept
+        {
+            for (int i = 0; i < Count; ++i)
+            {
+                // An end event may name a shape that was destroyed since: it has no entity to name any more.
+                if (!b3Shape_IsValid(pEvents[i].shapeIdA) || !b3Shape_IsValid(pEvents[i].shapeIdB)) continue;
+                const std::uint64_t A = EntityOfShape(pEvents[i].shapeIdA), B = EntityOfShape(pEvents[i].shapeIdB);
+                if (A == kNone || B == kNone) continue;
+                Out.push_back(Make(pEvents[i], A, B));
+            }
+            std::sort(Out.begin(), Out.end(), [](const auto& X, const auto& Y) noexcept
+            {
+                return X.m_A.m_Value != Y.m_A.m_Value ? X.m_A.m_Value < Y.m_A.m_Value : X.m_B.m_Value < Y.m_B.m_Value;
+            });
+        };
+
+        const auto MakeTouch = [](const auto& E, std::uint64_t A, std::uint64_t B) noexcept
+        {
+            return contact_touch{ xecs::component::entity{ A }, xecs::component::entity{ B }, E.shapeIdA, E.shapeIdB, E.contactId };
+        };
+        Collect(Events.beginEvents, Events.beginCount, MakeTouch, Begin);
+        Collect(Events.endEvents,   Events.endCount,   MakeTouch, End);
+        Collect(Events.hitEvents,   Events.hitCount,   [](const b3ContactHitEvent& E, std::uint64_t A, std::uint64_t B) noexcept
+        {
+            return contact_hit{ xecs::component::entity{ A }, xecs::component::entity{ B }, E.shapeIdA, E.shapeIdB, E.contactId, E.point, E.normal, E.approachSpeed, E.userMaterialIdA, E.userMaterialIdB };
+        }, Hit);
     }
 
     void backend::DestroyBody(b3BodyId BodyId) noexcept

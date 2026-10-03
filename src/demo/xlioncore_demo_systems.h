@@ -48,9 +48,9 @@ namespace xlioncore::demo
 
         sensor_begin_logger(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
-        void OnEvent(xecs::component::entity Sensor, xecs::component::entity Visitor) noexcept
+        void OnEvent(const xlioncore::physics::sensor_touch& Touch) noexcept
         {
-            std::printf("[System] Sensor begin sensor=%llX visitor=%llX\n", static_cast<unsigned long long>(Sensor.m_Value), static_cast<unsigned long long>(Visitor.m_Value));
+            std::printf("[System] Sensor begin sensor=%llX visitor=%llX\n", static_cast<unsigned long long>(Touch.m_Sensor.m_Value), static_cast<unsigned long long>(Touch.m_Visitor.m_Value));
             std::fflush(stdout);
         }
     };
@@ -61,9 +61,50 @@ namespace xlioncore::demo
 
         sensor_end_logger(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
-        void OnEvent(xecs::component::entity Sensor, xecs::component::entity Visitor) noexcept
+        void OnEvent(const xlioncore::physics::sensor_touch& Touch) noexcept
         {
-            std::printf("[System] Sensor end sensor=%llX visitor=%llX\n", static_cast<unsigned long long>(Sensor.m_Value), static_cast<unsigned long long>(Visitor.m_Value));
+            std::printf("[System] Sensor end sensor=%llX visitor=%llX\n", static_cast<unsigned long long>(Touch.m_Sensor.m_Value), static_cast<unsigned long long>(Touch.m_Visitor.m_Value));
+            std::fflush(stdout);
+        }
+    };
+
+    // The same for the solid contacts of the shapes with ContactEvents on.
+    struct contact_begin_logger : xecs::system::instance
+    {
+        constexpr static auto typedef_v = xecs::system::type::global_event<xlioncore::physics::contact_begin_event>{ .m_pName = "Contact Begin Logger" };
+
+        contact_begin_logger(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
+
+        void OnEvent(const xlioncore::physics::contact_touch& Touch) noexcept
+        {
+            std::printf("[System] Contact begin a=%llX b=%llX\n", static_cast<unsigned long long>(Touch.m_A.m_Value), static_cast<unsigned long long>(Touch.m_B.m_Value));
+            std::fflush(stdout);
+        }
+    };
+
+    struct contact_end_logger : xecs::system::instance
+    {
+        constexpr static auto typedef_v = xecs::system::type::global_event<xlioncore::physics::contact_end_event>{ .m_pName = "Contact End Logger" };
+
+        contact_end_logger(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
+
+        void OnEvent(const xlioncore::physics::contact_touch& Touch) noexcept
+        {
+            std::printf("[System] Contact end a=%llX b=%llX\n", static_cast<unsigned long long>(Touch.m_A.m_Value), static_cast<unsigned long long>(Touch.m_B.m_Value));
+            std::fflush(stdout);
+        }
+    };
+
+    struct contact_hit_logger : xecs::system::instance
+    {
+        constexpr static auto typedef_v = xecs::system::type::global_event<xlioncore::physics::contact_hit_event>{ .m_pName = "Contact Hit Logger" };
+
+        contact_hit_logger(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
+
+        void OnEvent(const xlioncore::physics::contact_hit& Hit) noexcept
+        {
+            std::printf("[System] Contact hit a=%llX b=%llX speed=%.2f point=%.2f,%.2f,%.2f normal=%.2f,%.2f,%.2f\n", static_cast<unsigned long long>(Hit.m_A.m_Value), static_cast<unsigned long long>(Hit.m_B.m_Value)
+                       , Hit.m_ApproachSpeed, static_cast<double>(Hit.m_Point.x), static_cast<double>(Hit.m_Point.y), static_cast<double>(Hit.m_Point.z), Hit.m_Normal.x, Hit.m_Normal.y, Hit.m_Normal.z);
             std::fflush(stdout);
         }
     };
@@ -80,5 +121,14 @@ XSCRIPT_REGISTER_SYSTEM(demo_sensor_begin_logger)
 
 using demo_sensor_end_logger = xlioncore::demo::sensor_end_logger;
 XSCRIPT_REGISTER_SYSTEM(demo_sensor_end_logger)
+
+using demo_contact_begin_logger = xlioncore::demo::contact_begin_logger;
+XSCRIPT_REGISTER_SYSTEM(demo_contact_begin_logger)
+
+using demo_contact_end_logger = xlioncore::demo::contact_end_logger;
+XSCRIPT_REGISTER_SYSTEM(demo_contact_end_logger)
+
+using demo_contact_hit_logger = xlioncore::demo::contact_hit_logger;
+XSCRIPT_REGISTER_SYSTEM(demo_contact_hit_logger)
 
 #endif // XLIONCORE_DEMO_SYSTEMS_H

@@ -21,6 +21,7 @@
 #include "../xlioncore_small_vector_xproperty.h"
 #include "xlioncore_physics_material.h"
 #include "xlioncore_physics_collider.h"
+#include "xlioncore_physics_events.h"
 #include "plugins/xscript_module.plugin/source/Runtime/xscript_registration.h"
 #include <box3d/box3d.h>
 #include <cstdint>
@@ -152,22 +153,43 @@ namespace xlioncore::physics
     //      {
     //          constexpr static auto typedef_v = xecs::system::type::global_event<xlioncore::physics::sensor_begin_event>{ .m_pName = "Goal" };
     //          goal_system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
-    //          void OnEvent(xecs::component::entity Sensor, xecs::component::entity Visitor) noexcept { ... }
+    //          void OnEvent(const xlioncore::physics::sensor_touch& Touch) noexcept { ... Touch.m_Sensor, Touch.m_Visitor ... }
     //      };
     //
-    // Both are the entity handles stored in the Box3D bodies (the user data of a body is its entity). They only observe: nothing here changes the simulation, and they are sent right after the
-    // fixed step that produced them (and before the systems connected to "After Step" run), once per step, sorted by (sensor, visitor). A handler may create or destroy entities.
+    // What a handler is given is Box3D's own event (xlioncore_physics_events.h) with the bodies named by their entities (the user data of a Box3D body is its entity handle), so nothing Box3D says
+    // is lost: the shape ids, the point, the normal, the approach speed. They only observe: nothing here changes the simulation, and they are sent right after the fixed step that produced them
+    // (and before the systems connected to "After Step" run), once per step, sorted by entity. A handler may create or destroy entities.
     //----------------------------------------------------------------------------------------------
-    // A shape (of Visitor) started overlapping a sensor shape (of Sensor). Every shape can be a visitor (the collision filter of the two decides); a sensor is a collider with m_IsSensor.
-    struct sensor_begin_event : xecs::event::instance<xecs::component::entity, xecs::component::entity>
+    // A shape (the visitor) started overlapping a sensor shape. Every shape can be a visitor (the collision filter of the two decides); a sensor is a collider with m_IsSensor.
+    struct sensor_begin_event : xecs::event::instance<sensor_touch>
     {
         constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Sensor Begin", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::sensor_begin_event" } };
     };
 
     // It stopped overlapping it. Not sent when the visitor (or the sensor) was destroyed in between: there is no entity to name any more.
-    struct sensor_end_event : xecs::event::instance<xecs::component::entity, xecs::component::entity>
+    struct sensor_end_event : xecs::event::instance<sensor_touch>
     {
         constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Sensor End", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::sensor_end_event" } };
+    };
+
+    // Solid bodies touching. Sent for the shapes that have ContactEvents on (when either of the two shapes of the pair has it), with the pair in Box3D's order (a handler looks at both: the ball is A or B).
+    // Same timing as the sensor events. Contacts of a sensor are not these: they are sensor events.
+    // The two shapes began touching.
+    struct contact_begin_event : xecs::event::instance<contact_touch>
+    {
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact Begin", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_begin_event" } };
+    };
+
+    // They stopped touching (not sent when one of them was destroyed in between).
+    struct contact_end_event : xecs::event::instance<contact_touch>
+    {
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact End", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_end_event" } };
+    };
+
+    // They hit each other faster than the world's hit threshold (1 meter per second): where, which way and how fast (see contact_hit). A rolling or resting contact is not a hit.
+    struct contact_hit_event : xecs::event::instance<contact_hit>
+    {
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact Hit", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_hit_event" } };
     };
 }
 

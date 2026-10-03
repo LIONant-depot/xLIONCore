@@ -77,6 +77,8 @@ namespace xlioncore::physics
         xecs::game_mgr::instance&  m_MyGameMgr;   // system::instance's own m_GameMgr is private - see GetComponentPtr's comment
         std::vector<b3BodyId>      m_PendingDestroy;   // queued by destroy_notify::OnNotify, drained in OnPostStructuralChanges
         std::vector<sensor_touch>  m_SensorBegin, m_SensorEnd;      // what the last step reported (kept to reuse the memory)
+        std::vector<contact_touch> m_ContactBegin, m_ContactEnd;
+        std::vector<contact_hit>   m_ContactHit;
 
         system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr), m_MyGameMgr(GameMgr) {}
 
@@ -212,9 +214,18 @@ namespace xlioncore::physics
         {
             m_Backend.DrainSensorEvents(m_SensorBegin, m_SensorEnd);
             for (const auto& Touch : m_SensorBegin)
-                m_MyGameMgr.SendGlobalEvent<sensor_begin_event>(xecs::component::entity{ Touch.m_Sensor }, xecs::component::entity{ Touch.m_Visitor });
+                m_MyGameMgr.SendGlobalEvent<sensor_begin_event>(Touch);
             for (const auto& Touch : m_SensorEnd)
-                m_MyGameMgr.SendGlobalEvent<sensor_end_event>(xecs::component::entity{ Touch.m_Sensor }, xecs::component::entity{ Touch.m_Visitor });
+                m_MyGameMgr.SendGlobalEvent<sensor_end_event>(Touch);
+
+            // The same for the solid contacts of the shapes that asked (see contact_begin_event).
+            m_Backend.DrainContactEvents(m_ContactBegin, m_ContactEnd, m_ContactHit);
+            for (const auto& Touch : m_ContactBegin)
+                m_MyGameMgr.SendGlobalEvent<contact_begin_event>(Touch);
+            for (const auto& Hit : m_ContactHit)
+                m_MyGameMgr.SendGlobalEvent<contact_hit_event>(Hit);
+            for (const auto& Touch : m_ContactEnd)
+                m_MyGameMgr.SendGlobalEvent<contact_end_event>(Touch);
         }
 
         void OnUpdate(void) noexcept
@@ -388,8 +399,8 @@ namespace xlioncore::physics
 
             std::vector<shape_params> Shapes;
 
-            // What every collider shape shares: the material, the body's collision filter, the sensor flag.
-            const auto Add = [&]( shape_params::kind Kind, const material::ref& MaterialRef, bool bIsSensor
+            // What every collider shape shares: the material, the body's collision filter, the sensor and contact-event flags.
+            const auto Add = [&]( shape_params::kind Kind, const material::ref& MaterialRef, bool bIsSensor, bool bContactEvents
                                 , const xmath::fvec3& Center, const xmath::fquat& Orientation ) -> shape_params&
             {
                 const auto& Material = Physics.getMaterial( MaterialRef );
@@ -405,23 +416,24 @@ namespace xlioncore::physics
                 S.m_MaskBits      = BodyProps.m_MaskBits;
                 S.m_GroupIndex    = BodyProps.m_GroupIndex;
                 S.m_IsSensor      = bIsSensor;
+                S.m_ContactEvents = bContactEvents;
                 return S;
             };
 
             // Scaling rules live in collider_scale (xlioncore_physics_collider.h) - shared with the editor tools.
             if( pBoxes )
                 for( auto& Box : pBoxes->m_Boxes )
-                    Add( shape_params::kind::BOX, Box.m_Material, Box.m_IsSensor, Box.m_Center, Box.m_Orientation ).m_HalfExtents = Box.m_Size * T.m_Scale * 0.5f;
+                    Add( shape_params::kind::BOX, Box.m_Material, Box.m_IsSensor, Box.m_ContactEvents, Box.m_Center, Box.m_Orientation ).m_HalfExtents = Box.m_Size * T.m_Scale * 0.5f;
 
             if( pSpheres )
                 for( auto& Sphere : pSpheres->m_Spheres )
-                    Add( shape_params::kind::SPHERE, Sphere.m_Material, Sphere.m_IsSensor, Sphere.m_Center, xmath::fquat::fromIdentity() ).m_Radius = collider_scale::Sphere( Sphere, T.m_Scale );
+                    Add( shape_params::kind::SPHERE, Sphere.m_Material, Sphere.m_IsSensor, Sphere.m_ContactEvents, Sphere.m_Center, xmath::fquat::fromIdentity() ).m_Radius = collider_scale::Sphere( Sphere, T.m_Scale );
 
             if( pCapsules )
                 for( auto& Capsule : pCapsules->m_Capsules )
                 {
                     const auto Size = collider_scale::Capsule( Capsule, T.m_Scale );
-                    auto& S = Add( shape_params::kind::CAPSULE, Capsule.m_Material, Capsule.m_IsSensor, Capsule.m_Center, Capsule.m_Orientation );
+                    auto& S = Add( shape_params::kind::CAPSULE, Capsule.m_Material, Capsule.m_IsSensor, Capsule.m_ContactEvents, Capsule.m_Center, Capsule.m_Orientation );
                     S.m_Radius     = Size.m_Radius;
                     S.m_HalfHeight = Size.m_HalfSpine;
                 }
@@ -430,7 +442,7 @@ namespace xlioncore::physics
                 for( auto& Cylinder : pCylinders->m_Cylinders )
                 {
                     const auto Size = collider_scale::Cylinder( Cylinder, T.m_Scale );
-                    auto& S = Add( shape_params::kind::CYLINDER, Cylinder.m_Material, Cylinder.m_IsSensor, Cylinder.m_Center, Cylinder.m_Orientation );
+                    auto& S = Add( shape_params::kind::CYLINDER, Cylinder.m_Material, Cylinder.m_IsSensor, Cylinder.m_ContactEvents, Cylinder.m_Center, Cylinder.m_Orientation );
                     S.m_Radius     = Size.m_Radius;
                     S.m_HalfHeight = Size.m_HalfHeight;
                 }

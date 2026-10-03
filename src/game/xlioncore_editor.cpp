@@ -89,6 +89,57 @@ namespace
             auto& Details = m_Game.m_pGameMgr->m_ComponentMgr.getEntityDetails(Entity);
             return Details.m_pPool && Details.m_pPool->m_pArchetype->getComponentBits().getBit(pInfo->m_BitID);
         }
+        void ComponentTypesOf(xecs::component::entity Entity, std::vector<const xecs::component::type::info*>& Data, std::vector<const xecs::component::type::info*>& Share, std::vector<const xecs::component::type::info*>& Tags) noexcept override
+        {
+            Data.clear(); Share.clear(); Tags.clear();
+            if (!m_Game.m_pGameMgr || !Entity.isValid()) return;
+            auto& Details = m_Game.m_pGameMgr->m_ComponentMgr.getEntityDetails(Entity);
+            if (!Details.m_pPool || !Details.m_pPool->m_pArchetype) return;
+            auto* pArchetype = Details.m_pPool->m_pArchetype;
+            for (auto p : pArchetype->getDataComponentInfos()) Data.push_back(p);
+            if (Details.m_pPool->m_pMyFamily)
+            {
+                for (auto* p : Details.m_pPool->m_pMyFamily->m_ShareInfos)
+                    if (p && std::find(Share.begin(), Share.end(), p) == Share.end()) Share.push_back(p);
+            }
+            else for (auto p : pArchetype->getShareComponentInfos()) Share.push_back(p);
+            pArchetype->AppendTagComponentInfos(Tags);
+        }
+        void ListComponentTypes(std::vector<const xecs::component::type::info*>& Out) noexcept override
+        {
+            Out.clear();
+            for (auto& Pair : xecs::component::mgr::s_Registry.m_ComponentInfoMap) Out.push_back(Pair.second);
+        }
+        void ListSystems(std::vector<xlioncore::system_view>& Out, bool bEntitySystemsOnly) noexcept override
+        {
+            Out.clear();
+            if (!m_Game.m_pGameMgr) return;
+            auto& Mgr  = m_Game.m_pGameMgr->m_SystemMgr;
+            auto  Rows = Mgr.GetUpdateSystemRows();   // index-aligned with m_UpdaterSystems
+            for (std::size_t i = 0; i < Mgr.m_UpdaterSystems.size(); ++i)
+            {
+                auto* pInfo = Mgr.m_UpdaterSystems[i].first;
+                if (bEntitySystemsOnly && pInfo->m_Access.empty()) continue;
+                Out.push_back({ pInfo, true, i < Rows.size() ? Rows[i].m_bEnabled : true, static_cast<int>(i) });
+            }
+            for (auto& E : Mgr.m_NotifierSystems)
+            {
+                if (bEntitySystemsOnly && E.first->m_Access.empty()) continue;
+                Out.push_back({ E.first, false, true, -1 });
+            }
+        }
+        bool SystemMatches(const xlioncore::system_view& System, std::span<const xecs::component::type::guid> Components) noexcept override
+        {
+            xecs::tools::bits Bits;
+            for (const auto& G : Components) if (const auto* p = xecs::component::mgr::findComponentTypeInfo(G)) Bits.setBit(p->m_BitID);
+            if (System.m_bUpdate)
+            {
+                xecs::tools::bits Exclusive;
+                Exclusive.setupAnd(Bits, xecs::component::mgr::s_Registry.m_ExclusiveTagsBits);
+                return System.m_pInfo->m_Query.Compare(Bits, Exclusive);
+            }
+            return System.m_pInfo->m_Query.Compare(Bits);
+        }
         xecs::component::parent*   ParentOf(xecs::component::entity Entity) noexcept override { return Get<xecs::component::parent>(Entity); }
         xecs::component::children* ChildrenOf(xecs::component::entity Entity) noexcept override { return Get<xecs::component::children>(Entity); }
         void DeleteEntity(xecs::component::entity Entity) noexcept override { if (m_Game.m_pGameMgr) m_Game.m_pGameMgr->DeleteEntity(Entity); }

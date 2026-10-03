@@ -17,10 +17,19 @@
 
 namespace xlioncore
 {
+    // One system of the world, as the editor lists it (the info points into the registering image: do not keep it past a reload).
+    struct system_view
+    {
+        const xecs::system::type::info* m_pInfo    = nullptr;
+        bool                            m_bUpdate  = true;     // false = notifier (runs on create/destroy/move events)
+        bool                            m_bEnabled = true;
+        int                             m_Order    = -1;       // execution order among the update systems
+    };
+
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 9;
+        static constexpr std::uint32_t kVersion = 10;
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -49,6 +58,14 @@ namespace xlioncore
         virtual void* ResolveComponent(xecs::component::entity Entity, xecs::component::type::guid Type, const xecs::component::type::info*& pInfo) noexcept = 0;
         // Whether the entity has the component, tags included (a tag has no data: it is only a bit of the entity's archetype).
         virtual bool HasComponent(xecs::component::entity Entity, xecs::component::type::guid Type) noexcept = 0;
+        // The component types of the entity, by kind (what its archetype holds: the data ones in the archetype's order, the share ones of its family, the tags). Empty when the entity is not alive.
+        virtual void ComponentTypesOf(xecs::component::entity Entity, std::vector<const xecs::component::type::info*>& Data, std::vector<const xecs::component::type::info*>& Share, std::vector<const xecs::component::type::info*>& Tags) noexcept = 0;
+        // Every component type registered in this copy of the core.
+        virtual void ListComponentTypes(std::vector<const xecs::component::type::info*>& Out) noexcept = 0;
+        // Every system of the world: the update systems in execution order, then the notifiers. Entity systems only leaves out the ones that declare no components (they do not iterate entities).
+        virtual void ListSystems(std::vector<system_view>& Out, bool bEntitySystemsOnly) noexcept = 0;
+        // Whether the system would run on an entity that has exactly these component types: the test the scheduler makes (update systems also look at the exclusive tags, notifiers do not).
+        virtual bool SystemMatches(const system_view& System, std::span<const xecs::component::type::guid> Components) noexcept = 0;
         virtual xecs::component::parent*   ParentOf(xecs::component::entity Entity) noexcept = 0;     // null when the entity has no parent component
         virtual xecs::component::children* ChildrenOf(xecs::component::entity Entity) noexcept = 0;   // null when it has no children component
         virtual void  DeleteEntity(xecs::component::entity Entity) noexcept = 0;

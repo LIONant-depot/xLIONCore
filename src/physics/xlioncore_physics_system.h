@@ -26,10 +26,10 @@
 namespace xlioncore::physics
 {
     // Resolves a component's live pointer for an arbitrary entity, DATA or SHARE, outside of any
-    // Foreach - system::instance's own m_GameMgr is private, so a caller that needs raw pool access
+    // Foreach - for a caller that needs raw pool access (a system passes its getGameMgr())
     // for a handle NOT currently being iterated (OnSceneReady walks Scene.m_LocalToRuntime directly,
     // not a Search() result; destroy_notify::OnNotify gets a handle from an archetype event, not a
-    // query) needs its own stored reference instead. Mirrors xscene::ResolveComponentPointer's exact
+    // query), so there is no Foreach to hand it the component. Mirrors xscene::ResolveComponentPointer's exact
     // DATA/SHARE resolution (xscene_shared_component_template.h) - not reused directly since xLIONCore
     // (an engine DLL) shouldn't depend on xscene.plugin (an editor plugin).
     template< typename T >
@@ -74,25 +74,24 @@ namespace xlioncore::physics
           , { "After Step",  "Runs once for every fixed step, right after the world took it: where the systems that read what the step did belong" }
         } };
 
-        xecs::game_mgr::instance&  m_MyGameMgr;   // system::instance's own m_GameMgr is private - see GetComponentPtr's comment
         std::vector<b3BodyId>      m_PendingDestroy;   // queued by destroy_notify::OnNotify, drained in OnPostStructuralChanges
         std::vector<sensor_touch>  m_SensorBegin, m_SensorEnd;      // what the last step reported (kept to reuse the memory)
         std::vector<contact_touch> m_ContactBegin, m_ContactEnd;
         std::vector<contact_hit>   m_ContactHit;
 
-        system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr), m_MyGameMgr(GameMgr) {}
+        system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
         void OnCreate(void) noexcept
         {
             // The game this world belongs to (the user data of the game manager) keeps the live physics: cross-module callers
             // (xlioncore_physics_api.h's exported functions, compiled into THIS DLL, so same-module access to m_Backend's
             // non-exported methods) reach it through Game.m_pPhysics.
-            if (auto* pGame = game::From(m_MyGameMgr)) pGame->m_pPhysics = this;
+            if (auto* pGame = game::From(getGameMgr())) pGame->m_pPhysics = this;
         }
 
         void OnDestroy(void) noexcept
         {
-            if (auto* pGame = game::From(m_MyGameMgr); pGame && pGame->m_pPhysics == this)
+            if (auto* pGame = game::From(getGameMgr()); pGame && pGame->m_pPhysics == this)
                 pGame->m_pPhysics = nullptr;
         }
 
@@ -107,7 +106,7 @@ namespace xlioncore::physics
         {
             const std::uint64_t Key = Ref.m_Instance.m_Value;
             if( auto It = m_Materials.find(Key); It != m_Materials.end() ) return It->second;
-            return m_Materials.emplace( Key, material::Load( m_MyGameMgr.m_SceneMgr.m_ProjectPath, Key ) ).first->second;
+            return m_Materials.emplace( Key, material::Load( getGameMgr().m_SceneMgr.m_ProjectPath, Key ) ).first->second;
         }
 
         // Called once per entity by body_builder, while the entity is being created: the body, then
@@ -214,18 +213,18 @@ namespace xlioncore::physics
         {
             m_Backend.DrainSensorEvents(m_SensorBegin, m_SensorEnd);
             for (const auto& Touch : m_SensorBegin)
-                m_MyGameMgr.SendGlobalEvent<sensor_begin_event>(Touch);
+                getGameMgr().SendGlobalEvent<sensor_begin_event>(Touch);
             for (const auto& Touch : m_SensorEnd)
-                m_MyGameMgr.SendGlobalEvent<sensor_end_event>(Touch);
+                getGameMgr().SendGlobalEvent<sensor_end_event>(Touch);
 
             // The same for the solid contacts of the shapes that asked (see contact_begin_event).
             m_Backend.DrainContactEvents(m_ContactBegin, m_ContactEnd, m_ContactHit);
             for (const auto& Touch : m_ContactBegin)
-                m_MyGameMgr.SendGlobalEvent<contact_begin_event>(Touch);
+                getGameMgr().SendGlobalEvent<contact_begin_event>(Touch);
             for (const auto& Hit : m_ContactHit)
-                m_MyGameMgr.SendGlobalEvent<contact_hit_event>(Hit);
+                getGameMgr().SendGlobalEvent<contact_hit_event>(Hit);
             for (const auto& Touch : m_ContactEnd)
-                m_MyGameMgr.SendGlobalEvent<contact_end_event>(Touch);
+                getGameMgr().SendGlobalEvent<contact_end_event>(Touch);
         }
 
         void OnUpdate(void) noexcept
@@ -245,7 +244,7 @@ namespace xlioncore::physics
 
             // The fixed steps the game's time says are due this frame (see game_time): the world takes exactly that many, and the systems
             // connected to this one run around each of them (Before Step: they push on the bodies, After Step: they read what happened).
-            const auto* pGame = game::From(m_MyGameMgr);
+            const auto* pGame = game::From(getGameMgr());
             const int   nSteps = pGame ? pGame->m_Time.m_FixedSteps : 0;
             for (int Step = 0; Step < nSteps; ++Step)
             {
@@ -467,13 +466,11 @@ namespace xlioncore::physics
         constexpr static auto typedef_v = xecs::system::type::notify_destroy{ .m_pName = "Physics Destroy Notify" };
         using query = std::tuple< xecs::query::must< physics_body > >;
 
-        xecs::game_mgr::instance& m_MyGameMgr;
-
-        destroy_notify(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr), m_MyGameMgr(GameMgr) {}
+        destroy_notify(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
         void OnNotify(xecs::component::entity& Entity) noexcept
         {
-            auto* pBody = GetComponentPtr<physics_body>(m_MyGameMgr, Entity);
+            auto* pBody = GetComponentPtr<physics_body>(getGameMgr(), Entity);
             if (!pBody || B3_IS_NULL(pBody->m_BodyId)) return;
             if (auto* pOwner = findSystem<system>())
                 pOwner->QueueDestroy(pBody->m_BodyId);

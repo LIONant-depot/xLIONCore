@@ -20,7 +20,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 3;
+        static constexpr std::uint32_t kVersion = 5;
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -55,6 +55,15 @@ namespace xlioncore
         // Components added to / removed from an entity: it moves to another archetype, so the handle that comes back is the entity's new one (the old handle is stale).
         virtual xecs::component::entity AddComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add) noexcept = 0;
         virtual xecs::component::entity RemoveComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Remove) noexcept = 0;
+        // Both in one move (one new handle): what an entity gains and what it loses.
+        virtual xecs::component::entity ChangeComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add, std::span<const xecs::component::type::guid> Remove) noexcept = 0;
+        // A SHARE component's value changed (the entity moves to the family that holds the new value, which may already exist); pData is the new value, laid out as the type. False when the entity has no family.
+        virtual bool ReinternShareComponent(xecs::component::entity Entity, xecs::component::type::guid Type, const void* pData) noexcept = 0;
+        // The DATA components of an entity, each with its description and its data (SHARE components: ResolveComponent). Same lifetime rule as ResolveComponent.
+        struct component_view { const xecs::component::type::info* m_pInfo; std::byte* m_pData; };
+        virtual void DataComponentsOf(xecs::component::entity Entity, std::vector<component_view>& Out) noexcept = 0;
+        // What this copy of the core knows about a component type (null: it does not know it). Points into the registering image: do not keep it past a reload.
+        virtual const xecs::component::type::info* FindComponentType(xecs::component::type::guid Type) noexcept = 0;
 
         // ---- running it
         virtual void Run() noexcept = 0;                                  // one frame: the time moves by the real time since the last call, then the systems run
@@ -68,6 +77,10 @@ namespace xlioncore
         // ---- physics
         virtual bool TeleportDynamicBody(xecs::component::entity Entity, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept = 0;
     };
+
+    // The guid of a component type: a compile-time constant of the type, the same in every binary (the bit id is what is per binary, and is never needed outside the core).
+    template<typename T_COMPONENT>
+    inline xecs::component::type::guid GuidOf() noexcept { return xecs::component::type::info_v<T_COMPONENT>.m_Guid; }
 
     // A typed view of ResolveComponent for the types whose guid is the compile-time constant of the type (every component: the same in every binary, only the bit id is per binary).
     template<typename T_COMPONENT>

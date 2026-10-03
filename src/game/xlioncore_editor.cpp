@@ -96,16 +96,35 @@ namespace
             const auto Infos = InfosOf(Components);
             return m_Game.m_pGameMgr->getOrCreateArchetype(Infos).CreateEntity();
         }
-        xecs::component::entity AddComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add) noexcept override
+        xecs::component::entity ChangeComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add, std::span<const xecs::component::type::guid> Remove) noexcept override
         {
-            const auto Infos = InfosOf(Add);
-            return m_Game.m_pGameMgr->AddOrRemoveComponents(Entity, Infos, std::span<const xecs::component::type::info* const>{});
+            const auto AddInfos = InfosOf(Add), RemoveInfos = InfosOf(Remove);
+            return m_Game.m_pGameMgr->AddOrRemoveComponents(Entity, AddInfos, RemoveInfos);
         }
-        xecs::component::entity RemoveComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Remove) noexcept override
+        xecs::component::entity AddComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add) noexcept override { return ChangeComponents(Entity, Add, {}); }
+        xecs::component::entity RemoveComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Remove) noexcept override { return ChangeComponents(Entity, {}, Remove); }
+        bool ReinternShareComponent(xecs::component::entity Entity, xecs::component::type::guid Type, const void* pData) noexcept override
         {
-            const auto Infos = InfosOf(Remove);
-            return m_Game.m_pGameMgr->AddOrRemoveComponents(Entity, std::span<const xecs::component::type::info* const>{}, Infos);
+            if (!m_Game.m_pGameMgr || !Entity.isValid()) return false;
+            const auto* pInfo = xecs::component::mgr::findComponentTypeInfo(Type);
+            if (!pInfo) return false;
+            auto& Details = m_Game.m_pGameMgr->m_ComponentMgr.getEntityDetails(Entity);
+            if (Details.m_pPool == nullptr || Details.m_pPool->m_pMyFamily == nullptr || Details.m_pPool->m_pArchetype == nullptr) return false;
+            return m_Game.m_pGameMgr->ReinternShareComponent(Entity, *pInfo, static_cast<std::byte*>(const_cast<void*>(pData)));
         }
+        void DataComponentsOf(xecs::component::entity Entity, std::vector<component_view>& Out) noexcept override
+        {
+            if (!m_Game.m_pGameMgr || !Entity.isValid()) return;
+            auto& Details = m_Game.m_pGameMgr->m_ComponentMgr.getEntityDetails(Entity);
+            if (!Details.m_pPool) return;
+            for (const auto* pInfo : Details.m_pPool->m_pArchetype->getDataComponentInfos())
+            {
+                const auto iType = Details.m_pPool->findIndexComponentFromInfo(*pInfo);
+                if (iType < 0) continue;
+                Out.push_back({ pInfo, &Details.m_pPool->m_pComponent[iType][Details.m_PoolIndex.m_Value * pInfo->m_Size] });
+            }
+        }
+        const xecs::component::type::info* FindComponentType(xecs::component::type::guid Type) noexcept override { return xecs::component::mgr::findComponentTypeInfo(Type); }
 
         void Run() noexcept override { m_Game.Run(); }
         void StepOnce() noexcept override { m_Game.StepOnce(); }

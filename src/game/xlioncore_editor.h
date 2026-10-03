@@ -1,0 +1,64 @@
+#ifndef XLIONCORE_EDITOR_H
+#define XLIONCORE_EDITOR_H
+#pragma once
+
+// xECSEditor: how the editor talks to the ECS of ONE copy of the core.
+//
+// xECS is mostly header-only, so code that includes its headers (the editor in xLION.exe, a Game.dll) runs against the registry of whichever LIONCore.dll THAT BINARY imported. To have several copies of
+// the core in one process, each with its own registry (one for each open Level), the editor must not run xECS code itself: it asks a copy of the core for an xECSEditor, a pure virtual interface whose
+// functions run inside that copy, and only calls those. The editor does not link LIONCore.dll for this: it looks up the factory in the copy it was given (CreateEditorName, GetProcAddress on that module).
+//
+// Every function is noexcept and nothing here throws across the boundary. Types that cross it (xecs::game_mgr::instance, game_time, xerr, std::string) are the same header in the editor and in the core:
+// everything is /MD with one CRT, so they can be created in one and freed in the other, and the interface says who frees what (Release).
+//
+// This is grown a group at a time (see documentation/Editors/ecs_link_gate.md): the first group is the world's life (create, run, step, stop, snapshot) and the engine functions the editor used to import.
+// Native() is the way out for what has not been moved behind the interface yet: it is the world of THIS copy, and the code that uses it is what the two ECS gates count.
+#include "dependencies/xLIONCore/src/game/xlioncore_game.h"
+
+namespace xlioncore
+{
+    struct xECSEditor
+    {
+        // Bumped when the interface changes in a way that a binary built against another version cannot use.
+        static constexpr std::uint32_t kVersion = 1;
+
+        virtual std::uint32_t Version() const noexcept = 0;
+
+        // The editor owns what it was given until it calls this: the interface, the game (time) and the world are gone after it.
+        virtual void Release() noexcept = 0;
+
+        // ---- the game of this editor: the time (plain data: the multiplier, the pause, the clocks) and what the systems of the world reach through getUserData<xlioncore::game>()
+        virtual game& Game() noexcept = 0;
+
+        // ---- the life of the world
+        virtual xecs::game_mgr::instance& CreateWorld() noexcept = 0;     // a new, empty world that knows the game, replacing the one there was (time keeps its multiplier and pause)
+        virtual void DestroyWorld() noexcept = 0;
+        virtual void AbandonWorld() noexcept = 0;                         // leaks a world whose systems crashed while registering: destroying what the crash left behind is worse
+        virtual xecs::game_mgr::instance* Native() noexcept = 0;          // the world of this copy of the core (null when there is none): for what is not behind the interface yet
+
+        // ---- running it
+        virtual void Run() noexcept = 0;                                  // one frame: the time moves by the real time since the last call, then the systems run
+        virtual void StepOnce() noexcept = 0;                             // exactly one fixed step (1/60 s)
+        virtual void RunSystems() noexcept = 0;                           // the systems once, without moving the time (the headless editor, which has its own clock)
+        virtual void StopPlay() noexcept = 0;                             // the world goes back to what it was when it started to run (Stop)
+
+        // ---- the snapshot of the whole game state (Play's reload bridge): binary or text, to or from a file
+        virtual xerr SerializeGameState(const char* pPath, bool bRead, bool bBinary) noexcept = 0;
+
+        // ---- physics
+        virtual bool TeleportDynamicBody(xecs::component::entity Entity, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept = 0;
+    };
+
+    // The factory every copy of the core exports (extern "C"): a new editor for a new game, owned by the caller (Release).
+    constexpr const char* kCreateEditorName = "XLionCore_CreateEditor";
+    using pfn_create_editor = xECSEditor* (*)() noexcept;
+
+    // The editor of the game a world belongs to (null for a world that no editor made, e.g. one only used to register components).
+    inline xECSEditor* EditorOf( xecs::game_mgr::instance& World ) noexcept
+    {
+        auto* pGame = game::From(World);
+        return pGame ? pGame->m_pEditor : nullptr;
+    }
+}
+
+#endif // XLIONCORE_EDITOR_H

@@ -34,6 +34,7 @@ add_library(xLIONCore SHARED
   "${CMAKE_SOURCE_DIR}/dependencies/xproperty/source/xcore/my_properties.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_physics_backend.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_plugin_entry.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/game/xlioncore_editor.cpp"
 )
 set_target_properties(xLIONCore PROPERTIES OUTPUT_NAME "LIONCore")
 target_include_directories(xLIONCore PRIVATE

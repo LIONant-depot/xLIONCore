@@ -19,6 +19,7 @@
 #include <memory>
 
 namespace xlioncore::physics { struct system; }
+namespace xlioncore { struct xECSEditor; }
 
 namespace xlioncore
 {
@@ -106,6 +107,7 @@ namespace xlioncore
         std::unique_ptr<xecs::game_mgr::instance>   m_pGameMgr;
         game_time                                   m_Time;
         physics::system*                            m_pPhysics = nullptr;       // set by the physics system while it is registered in m_pGameMgr
+        xECSEditor*                                 m_pEditor  = nullptr;       // the editor interface that made this game (null when the game is made directly): see xlioncore_editor.h
 
         // A new, empty game manager that knows this game (user data), replacing the previous one. The time keeps its multiplier and pause.
         xecs::game_mgr::instance& CreateWorld() noexcept

@@ -81,6 +81,14 @@ namespace
             return nullptr;
         }
 
+        bool HasComponent(xecs::component::entity Entity, xecs::component::type::guid Type) noexcept override
+        {
+            if (!m_Game.m_pGameMgr || !Entity.isValid()) return false;
+            const auto* pInfo = xecs::component::mgr::findComponentTypeInfo(Type);
+            if (!pInfo) return false;
+            auto& Details = m_Game.m_pGameMgr->m_ComponentMgr.getEntityDetails(Entity);
+            return Details.m_pPool && Details.m_pPool->m_pArchetype->getComponentBits().getBit(pInfo->m_BitID);
+        }
         xecs::component::parent*   ParentOf(xecs::component::entity Entity) noexcept override { return Get<xecs::component::parent>(Entity); }
         xecs::component::children* ChildrenOf(xecs::component::entity Entity) noexcept override { return Get<xecs::component::children>(Entity); }
         void DeleteEntity(xecs::component::entity Entity) noexcept override { if (m_Game.m_pGameMgr) m_Game.m_pGameMgr->DeleteEntity(Entity); }
@@ -125,6 +133,121 @@ namespace
             }
         }
         const xecs::component::type::info* FindComponentType(xecs::component::type::guid Type) noexcept override { return xecs::component::mgr::findComponentTypeInfo(Type); }
+
+        xecs::game_mgr::instance& W() noexcept { return *m_Game.m_pGameMgr; }
+        xerr LoadLevel(xecs::level::guid Level) noexcept override { return W().m_LevelMgr.Load(Level); }
+        xerr SaveLevel(xecs::level::guid Level) noexcept override { return W().m_LevelMgr.Save(Level); }
+        xerr ActivateLevel(xecs::level::guid Level) noexcept override { return W().m_LevelMgr.Activate(Level); }
+        xerr RequestLoadScene(xecs::scene::guid Scene) noexcept override { return W().m_SceneMgr.RequestLoad(Scene); }
+        xerr ReleaseLoadScene(xecs::scene::guid Scene) noexcept override { return W().m_SceneMgr.ReleaseLoad(Scene); }
+        xerr SaveScene(xecs::scene::guid Scene) noexcept override { return W().m_SceneMgr.SaveScene(Scene); }
+        xerr SaveSceneEntity(xecs::scene::guid Scene, xecs::scene::permanent_id Id, xecs::component::entity Entity) noexcept override { return W().m_SceneMgr.SaveEntity(Scene, Id, Entity); }
+        xecs::scene::instance& FindOrCreateScene(xecs::scene::guid Scene) noexcept override { return W().m_SceneMgr.FindOrCreate(Scene); }
+        std::vector<xecs::scene::component_dependency> CollectSceneComponentDependencies(xecs::scene::guid Scene) noexcept override { return W().m_SceneMgr.CollectSceneComponentDependencies(Scene); }
+        xerr EnsureLoadedPrefab(xecs::prefab::guid Prefab) noexcept override { return W().m_PrefabMgr.EnsureLoaded(Prefab); }
+        xerr SavePrefab(xecs::prefab::guid Prefab) noexcept override { return W().m_PrefabMgr.Save(Prefab); }
+        xecs::prefab::guid CreatePrefabFromEntity(xecs::component::entity Source, xecs::prefab::guid Prefab) noexcept override { return W().m_PrefabMgr.CreatePrefabFromEntity(Source, Prefab); }
+        xecs::component::entity CreatePrefabInstance(xecs::component::entity PrefabEntity, bool bRemoveRoot) noexcept override { return W().m_PrefabMgr.CreatePrefabInstance(1, PrefabEntity, xecs::tools::empty_lambda{}, bRemoveRoot); }
+        void UpdateStructuralChanges() noexcept override { if (m_Game.m_pGameMgr) W().m_ArchetypeMgr.UpdateStructuralChanges(); }
+        void EnableBuilders(bool bEnable) noexcept override { if (m_Game.m_pGameMgr) W().EnableBuilders(bEnable); }
+
+        static runtime_kind KindOf(const xecs::archetype::instance& Archetype) noexcept
+        {
+            runtime_kind Kind = SPAWNED;
+            Archetype.getComponentBits().Foreach([&](int, const xecs::component::type::info& Info) noexcept
+            {
+                if      (xecs::component::type::IsComponentType<xecs::prefab::tag>(&Info))                                Kind = PREFAB;
+                else if (xecs::component::type::IsComponentType<xecs::component::share_as_data_exclusive_tag>(&Info)) Kind = SHARE;
+            });
+            return Kind;
+        }
+        void CountRuntimeEntities(std::array<int, KIND_COUNT>& Counts) noexcept override
+        {
+            Counts = {};
+            if (!m_Game.m_pGameMgr) return;
+            for (auto& pArchetype : W().m_ArchetypeMgr.m_lArchetype)
+            {
+                auto& N = Counts[KindOf(*pArchetype)];
+                for (auto pF = pArchetype->getFamilyHead(); pF; pF = pF->m_Next.get())
+                    for (auto pP = &pF->m_DefaultPool; pP; pP = pP->m_Next.get())
+                        N += pP->Size();
+            }
+        }
+        void ListRuntimeEntities(runtime_kind Kind, std::vector<runtime_entity>& Out) noexcept override
+        {
+            if (!m_Game.m_pGameMgr) return;
+            for (auto& pArchetype : W().m_ArchetypeMgr.m_lArchetype)
+            {
+                if (KindOf(*pArchetype) != Kind) continue;
+
+                std::string Components;
+                for (auto pInfo : pArchetype->getDataComponentInfos())
+                {
+                    if (xecs::component::type::IsComponentType<xecs::component::entity>(pInfo)
+                     || xecs::component::type::IsComponentType<xecs::component::ref_count>(pInfo)) continue;
+                    Components += Components.empty() ? pInfo->m_pName : std::format(", {}", pInfo->m_pName);
+                }
+
+                for (auto pF = pArchetype->getFamilyHead(); pF; pF = pF->m_Next.get())
+                    for (auto pP = &pF->m_DefaultPool; pP; pP = pP->m_Next.get())
+                        for (int i = 0, n = pP->Size(); i < n; ++i)
+                        {
+                            const auto E = pP->getComponent<xecs::component::entity>(xecs::pool::index{ i });
+                            if (E.isZombie()) continue;
+                            Out.push_back({ E, Components });
+                        }
+            }
+        }
+
+        xecs::component::entity CloneEntity(xecs::component::entity Source, bool bWithParent) noexcept override
+        {
+            auto& Details = W().m_ComponentMgr.getEntityDetails(Source);
+            if (!Details.m_pPool) return {};
+            auto  DataSpan = Details.m_pPool->m_pArchetype->getDataComponentInfos();
+
+            std::vector<const xecs::component::type::info*> Infos;
+            Infos.push_back(&xecs::component::type::info_v<xecs::component::entity>);
+            for (auto pInfo : DataSpan)
+            {
+                if (xecs::component::type::IsComponentType<xecs::component::entity>(pInfo)) continue;
+                Infos.push_back(pInfo);
+            }
+            if (bWithParent && std::find_if(Infos.begin(), Infos.end(), [](auto* p) noexcept { return xecs::component::type::IsComponentType<xecs::component::parent>(p); }) == Infos.end())
+                Infos.push_back(&xecs::component::type::info_v<xecs::component::parent>);
+
+            auto& NewArchetype = W().getOrCreateArchetype({ Infos.data(), Infos.size() });
+            std::vector<const xecs::component::type::info*> DataInfos;
+            for (auto pInfo : Infos)
+                if (pInfo->m_TypeID != xecs::component::type::id::TAG) DataInfos.push_back(pInfo);
+            std::vector<std::byte*> MoveData(DataInfos.size(), nullptr);
+            const auto NewEntity = NewArchetype.CreateEntity({ DataInfos.data(), DataInfos.size() }, { MoveData.data(), MoveData.size() });
+
+            auto& NewDetails = W().m_ComponentMgr.getEntityDetails(NewEntity);
+            auto& NewPool    = *NewDetails.m_pPool;
+            auto& SourceDetails = W().m_ComponentMgr.getEntityDetails(Source);            // the pools may have moved while the entity was made
+            for (auto pInfo : DataSpan)
+            {
+                if (xecs::component::type::IsComponentType<xecs::component::entity>(pInfo)) continue;
+                if (xecs::component::type::IsComponentType<xecs::component::parent>(pInfo)) continue;
+                if (xecs::component::type::IsComponentType<xecs::component::children>(pInfo)) continue;
+                const auto iSrc = SourceDetails.m_pPool->findIndexComponentFromInfo(*pInfo);
+                const auto iDst = NewPool.findIndexComponentFromInfo(*pInfo);
+                if (iSrc < 0 || iDst < 0) continue;
+                auto* pSrc = &SourceDetails.m_pPool->m_pComponent[iSrc][SourceDetails.m_PoolIndex.m_Value * pInfo->m_Size];
+                auto* pDst = &NewPool.m_pComponent[iDst][NewDetails.m_PoolIndex.m_Value * pInfo->m_Size];
+                if (pInfo->m_pCopyFn) pInfo->m_pCopyFn(pDst, pSrc);
+                else std::memcpy(pDst, pSrc, pInfo->m_Size);
+            }
+            return NewEntity;
+        }
+        xecs::component::entity ResolveMemberPath(xecs::component::entity Root, std::span<const std::uint32_t> Path) noexcept override { return xecs::persist::details::ResolveMemberPath(W(), Root, Path); }
+        void ApplyPrefabInstancePropertyOverrides(xecs::component::entity Entity) noexcept override { xecs::persist::details::ApplyPrefabInstancePropertyOverrides(W(), Entity); }
+        xerr ApplyInstanceOverridesToPrefab(xecs::component::entity PIRootEntity) noexcept override { return xecs::persist::details::ApplyInstanceOverridesToPrefab(W(), PIRootEntity); }
+        xerr LoadSceneEntity(xecs::scene::instance& Scene, xecs::scene::permanent_id Id) noexcept override { return xecs::scene::details::LoadEntity(W().m_SceneMgr, Scene, Id); }
+        void RemapLoadedEntityReferences(xecs::component::entity Entity, const std::function<xecs::component::entity(std::int64_t)>& Resolve) noexcept override
+        {
+            xecs::persist::details::RemapLoadedEntityReferences(W(), Entity, [&](std::int64_t Encoded) noexcept -> xecs::component::entity { return Resolve(Encoded); });
+        }
 
         void Run() noexcept override { m_Game.Run(); }
         void StepOnce() noexcept override { m_Game.StepOnce(); }

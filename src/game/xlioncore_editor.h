@@ -20,7 +20,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 5;
+        static constexpr std::uint32_t kVersion = 9;
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -47,6 +47,8 @@ namespace xlioncore
         // The data of one component of the entity (a SHARE component through the entity that holds it), and what describes it (pInfo); null when the entity has no such component. pInfo points into
         // the registering image (this core or a Game.dll): do not keep it past a reload.
         virtual void* ResolveComponent(xecs::component::entity Entity, xecs::component::type::guid Type, const xecs::component::type::info*& pInfo) noexcept = 0;
+        // Whether the entity has the component, tags included (a tag has no data: it is only a bit of the entity's archetype).
+        virtual bool HasComponent(xecs::component::entity Entity, xecs::component::type::guid Type) noexcept = 0;
         virtual xecs::component::parent*   ParentOf(xecs::component::entity Entity) noexcept = 0;     // null when the entity has no parent component
         virtual xecs::component::children* ChildrenOf(xecs::component::entity Entity) noexcept = 0;   // null when it has no children component
         virtual void  DeleteEntity(xecs::component::entity Entity) noexcept = 0;
@@ -64,6 +66,40 @@ namespace xlioncore
         virtual void DataComponentsOf(xecs::component::entity Entity, std::vector<component_view>& Out) noexcept = 0;
         // What this copy of the core knows about a component type (null: it does not know it). Points into the registering image: do not keep it past a reload.
         virtual const xecs::component::type::info* FindComponentType(xecs::component::type::guid Type) noexcept = 0;
+
+        // ---- levels, scenes and prefabs: what the managers of the world do that builds, loads or saves entities and components (the editor only reads and marks their bookkeeping itself)
+        virtual xerr LoadLevel(xecs::level::guid Level) noexcept = 0;
+        virtual xerr SaveLevel(xecs::level::guid Level) noexcept = 0;
+        virtual xerr ActivateLevel(xecs::level::guid Level) noexcept = 0;                  // loads every scene of the Level
+        virtual xerr RequestLoadScene(xecs::scene::guid Scene) noexcept = 0;
+        virtual xerr ReleaseLoadScene(xecs::scene::guid Scene) noexcept = 0;
+        virtual xerr SaveScene(xecs::scene::guid Scene) noexcept = 0;
+        virtual xerr SaveSceneEntity(xecs::scene::guid Scene, xecs::scene::permanent_id Id, xecs::component::entity Entity) noexcept = 0;
+        virtual xecs::scene::instance& FindOrCreateScene(xecs::scene::guid Scene) noexcept = 0;
+        virtual std::vector<xecs::scene::component_dependency> CollectSceneComponentDependencies(xecs::scene::guid Scene) noexcept = 0;
+        virtual xerr EnsureLoadedPrefab(xecs::prefab::guid Prefab) noexcept = 0;
+        virtual xerr SavePrefab(xecs::prefab::guid Prefab) noexcept = 0;
+        virtual xecs::prefab::guid CreatePrefabFromEntity(xecs::component::entity Source, xecs::prefab::guid Prefab) noexcept = 0;
+        virtual xecs::component::entity CreatePrefabInstance(xecs::component::entity PrefabEntity, bool bRemoveRoot) noexcept = 0;     // one instance of a resident prefab
+        virtual void UpdateStructuralChanges() noexcept = 0;                               // the entities created/deleted/moved this frame take effect now (normally once a frame inside Run)
+        virtual void EnableBuilders(bool bEnable) noexcept = 0;
+
+        // ---- the prefab and scene model on top of entities
+        // A new entity with the same data components as Source (and a parent component when asked): their data copied, except the entity itself, the parent and the children (a children component starts empty).
+        virtual xecs::component::entity CloneEntity(xecs::component::entity Source, bool bWithParent) noexcept = 0;
+        // The entity at a member path (child indices from Root) of a prefab or an instance of one; invalid when the path does not lead anywhere.
+        virtual xecs::component::entity ResolveMemberPath(xecs::component::entity Root, std::span<const std::uint32_t> Path) noexcept = 0;
+        virtual void ApplyPrefabInstancePropertyOverrides(xecs::component::entity Entity) noexcept = 0;
+        virtual xerr ApplyInstanceOverridesToPrefab(xecs::component::entity PIRootEntity) noexcept = 0;
+        virtual xerr LoadSceneEntity(xecs::scene::instance& Scene, xecs::scene::permanent_id Id) noexcept = 0;           // one entity of a scene, from its file (the undo of a delete)
+        // The references to other entities of a loaded entity, resolved with what Resolve says for each encoded reference.
+        virtual void RemapLoadedEntityReferences(xecs::component::entity Entity, const std::function<xecs::component::entity(std::int64_t)>& Resolve) noexcept = 0;
+
+        // ---- every live entity of the world, by what it is: the Level tree's Runtime folder (entities spawned while the game runs, the prefab templates, the entities that hold share components)
+        enum runtime_kind : int { SPAWNED, PREFAB, SHARE, KIND_COUNT };
+        struct runtime_entity { xecs::component::entity m_Entity; std::string m_Components; };
+        virtual void CountRuntimeEntities(std::array<int, KIND_COUNT>& Counts) noexcept = 0;
+        virtual void ListRuntimeEntities(runtime_kind Kind, std::vector<runtime_entity>& Out) noexcept = 0;     // the live ones (no zombies), with the names of their data components
 
         // ---- running it
         virtual void Run() noexcept = 0;                                  // one frame: the time moves by the real time since the last call, then the systems run

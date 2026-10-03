@@ -1,6 +1,7 @@
 #include "xlioncore_physics_backend.h"
 #include <cstring>
 #include <array>
+#include <algorithm>
 
 namespace xlioncore::physics
 {
@@ -14,6 +15,16 @@ namespace xlioncore::physics
         xmath::fquat FromB3(const b3Quat& Q) noexcept
         {
             return xmath::fquat{ Q.v.x, Q.v.y, Q.v.z, Q.s };
+        }
+
+        // The entity a shape belongs to: the handle its body carries in its user data (a shape that is gone has none).
+        std::uint64_t EntityOfShape(b3ShapeId ShapeId) noexcept
+        {
+            constexpr std::uint64_t kNone = 0xffffffffffffffffull;
+            if (!b3Shape_IsValid(ShapeId)) return kNone;
+            const b3BodyId BodyId = b3Shape_GetBody(ShapeId);
+            if (B3_IS_NULL(BodyId)) return kNone;
+            return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b3Body_GetUserData(BodyId)));
         }
 
         bool IsIdentityLocal(const xmath::fvec3& P, const xmath::fquat& R) noexcept
@@ -59,6 +70,7 @@ namespace xlioncore::physics
         ShapeDef.filter.maskBits            = Params.m_MaskBits;
         ShapeDef.filter.groupIndex          = Params.m_GroupIndex;
         ShapeDef.isSensor                   = Params.m_IsSensor;
+        ShapeDef.enableSensorEvents         = true;     // every shape may enter a sensor (the filter decides which do); a sensor reports only the shapes that have this
         ShapeDef.updateBodyMass             = true;
 
         const xmath::fvec3& P = Params.m_LocalPosition;
@@ -206,6 +218,29 @@ namespace xlioncore::physics
         const b3Filter Filter{ .categoryBits = 0, .maskBits = 0, .groupIndex = 0 };
         for (int i = 0; i < Count; ++i)
             b3Shape_SetFilter(Shapes[i], Filter, false);
+    }
+
+    void backend::DrainSensorEvents(std::vector<sensor_touch>& Begin, std::vector<sensor_touch>& End) const noexcept
+    {
+        Begin.clear();
+        End.clear();
+        constexpr std::uint64_t kNone = 0xffffffffffffffffull;
+        const b3SensorEvents Events = b3World_GetSensorEvents(m_World);
+
+        const auto Collect = [&](auto* pEvents, int Count, std::vector<sensor_touch>& Out) noexcept
+        {
+            for (int i = 0; i < Count; ++i)
+            {
+                const sensor_touch Touch{ EntityOfShape(pEvents[i].sensorShapeId), EntityOfShape(pEvents[i].visitorShapeId) };
+                if (Touch.m_Sensor != kNone && Touch.m_Visitor != kNone) Out.push_back(Touch);
+            }
+            std::sort(Out.begin(), Out.end(), [](const sensor_touch& A, const sensor_touch& B) noexcept
+            {
+                return A.m_Sensor != B.m_Sensor ? A.m_Sensor < B.m_Sensor : A.m_Visitor < B.m_Visitor;
+            });
+        };
+        Collect(Events.beginEvents, Events.beginCount, Begin);
+        Collect(Events.endEvents,   Events.endCount,   End);
     }
 
     void backend::DestroyBody(b3BodyId BodyId) noexcept

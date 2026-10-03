@@ -76,6 +76,7 @@ namespace xlioncore::physics
 
         xecs::game_mgr::instance&  m_MyGameMgr;   // system::instance's own m_GameMgr is private - see GetComponentPtr's comment
         std::vector<b3BodyId>      m_PendingDestroy;   // queued by destroy_notify::OnNotify, drained in OnPostStructuralChanges
+        std::vector<sensor_touch>  m_SensorBegin, m_SensorEnd;      // what the last step reported (kept to reuse the memory)
 
         system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr), m_MyGameMgr(GameMgr) {}
 
@@ -206,6 +207,16 @@ namespace xlioncore::physics
             DrainPendingDestroy();
         }
 
+        // What the step just taken says about sensors, to the game as events (see sensor_begin_event). Sent here, outside any Foreach: a handler may create or destroy entities.
+        void SendSensorEvents(void) noexcept
+        {
+            m_Backend.DrainSensorEvents(m_SensorBegin, m_SensorEnd);
+            for (const auto& Touch : m_SensorBegin)
+                m_MyGameMgr.SendGlobalEvent<sensor_begin_event>(xecs::component::entity{ Touch.m_Sensor }, xecs::component::entity{ Touch.m_Visitor });
+            for (const auto& Touch : m_SensorEnd)
+                m_MyGameMgr.SendGlobalEvent<sensor_end_event>(xecs::component::entity{ Touch.m_Sensor }, xecs::component::entity{ Touch.m_Visitor });
+        }
+
         void OnUpdate(void) noexcept
         {
             static int s_Tick = 0;
@@ -313,6 +324,7 @@ namespace xlioncore::physics
                 DrainPendingDestroy();
 
                 m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
+                SendSensorEvents();
                 RunConnector(1);
             }
 

@@ -7,6 +7,7 @@
 #include "dependencies/xmath/source/xmath.h"
 #include <box3d/box3d.h>
 #include <cstdint>
+#include <vector>
 
 namespace xlioncore::physics
 {
@@ -46,6 +47,13 @@ namespace xlioncore::physics
         bool            m_IsSensor          = false;
     };
 
+    // Two shapes that started or stopped overlapping, one of them a sensor: the entity handles that were stored in the user data of their bodies (invalid_entity_v when a body has none).
+    struct sensor_touch
+    {
+        std::uint64_t   m_Sensor    = 0xffffffffffffffffull;
+        std::uint64_t   m_Visitor   = 0xffffffffffffffffull;
+    };
+
     class backend
     {
     public:
@@ -74,6 +82,9 @@ namespace xlioncore::physics
         // query result checking Entity.isZombie() once queries actually exist in this engine.
         void         MakeBodyUnqueryable(b3BodyId BodyId) noexcept;
         void         DestroyBody        (b3BodyId BodyId) noexcept;
+        // What the last Step changed between sensors and the shapes in them, as entities (the user data of each body), sorted so that two runs of the same game report the same order. An end
+        // event whose shape (or body) was destroyed since is dropped: it has no entity to name any more.
+        void         DrainSensorEvents  ( std::vector<sensor_touch>& Begin, std::vector<sensor_touch>& End ) const noexcept;
 
     private:
         b3WorldId m_World;

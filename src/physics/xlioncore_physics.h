@@ -144,6 +144,31 @@ namespace xlioncore::physics
         )
     };
     XSCRIPT_REGISTER_COMPONENT(physics_body, "Physics", 40)
+
+    //----------------------------------------------------------------------------------------------
+    // Events: what the physics tells the game it saw. They are xECS global events of the world: a system subscribes by being a global event system,
+    //
+    //      struct goal_system : xecs::system::instance
+    //      {
+    //          constexpr static auto typedef_v = xecs::system::type::global_event<xlioncore::physics::sensor_begin_event>{ .m_pName = "Goal" };
+    //          goal_system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
+    //          void OnEvent(xecs::component::entity Sensor, xecs::component::entity Visitor) noexcept { ... }
+    //      };
+    //
+    // Both are the entity handles stored in the Box3D bodies (the user data of a body is its entity). They only observe: nothing here changes the simulation, and they are sent right after the
+    // fixed step that produced them (and before the systems connected to "After Step" run), once per step, sorted by (sensor, visitor). A handler may create or destroy entities.
+    //----------------------------------------------------------------------------------------------
+    // A shape (of Visitor) started overlapping a sensor shape (of Sensor). Every shape can be a visitor (the collision filter of the two decides); a sensor is a collider with m_IsSensor.
+    struct sensor_begin_event : xecs::event::instance<xecs::component::entity, xecs::component::entity>
+    {
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Sensor Begin", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::sensor_begin_event" } };
+    };
+
+    // It stopped overlapping it. Not sent when the visitor (or the sensor) was destroyed in between: there is no entity to name any more.
+    struct sensor_end_event : xecs::event::instance<xecs::component::entity, xecs::component::entity>
+    {
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Sensor End", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::sensor_end_event" } };
+    };
 }
 
 #endif // XLIONCORE_PHYSICS_H

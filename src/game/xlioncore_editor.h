@@ -20,7 +20,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 2;
+        static constexpr std::uint32_t kVersion = 3;
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -42,6 +42,20 @@ namespace xlioncore
         virtual void UnregisterPlugin(xecs::plugin::token Token) noexcept = 0;   // every world is gone: the registry goes back to nothing (plugin reload)
         virtual void ResetRegistrations() noexcept = 0;
 
+        // ---- one entity, by handle (a per-world value). Pointers into the pools are valid until the next structural change of the world (an entity created, deleted, a component added or removed).
+        virtual bool  IsAlive(xecs::component::entity Entity) noexcept = 0;
+        // The data of one component of the entity (a SHARE component through the entity that holds it), and what describes it (pInfo); null when the entity has no such component. pInfo points into
+        // the registering image (this core or a Game.dll): do not keep it past a reload.
+        virtual void* ResolveComponent(xecs::component::entity Entity, xecs::component::type::guid Type, const xecs::component::type::info*& pInfo) noexcept = 0;
+        virtual xecs::component::parent*   ParentOf(xecs::component::entity Entity) noexcept = 0;     // null when the entity has no parent component
+        virtual xecs::component::children* ChildrenOf(xecs::component::entity Entity) noexcept = 0;   // null when it has no children component
+        virtual void  DeleteEntity(xecs::component::entity Entity) noexcept = 0;
+        // A new entity with those components (by guid: a guid this copy of the core does not know is skipped).
+        virtual xecs::component::entity CreateEntity(std::span<const xecs::component::type::guid> Components) noexcept = 0;
+        // Components added to / removed from an entity: it moves to another archetype, so the handle that comes back is the entity's new one (the old handle is stale).
+        virtual xecs::component::entity AddComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add) noexcept = 0;
+        virtual xecs::component::entity RemoveComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Remove) noexcept = 0;
+
         // ---- running it
         virtual void Run() noexcept = 0;                                  // one frame: the time moves by the real time since the last call, then the systems run
         virtual void StepOnce() noexcept = 0;                             // exactly one fixed step (1/60 s)
@@ -55,6 +69,31 @@ namespace xlioncore
         virtual bool TeleportDynamicBody(xecs::component::entity Entity, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept = 0;
     };
 
+    // A typed view of ResolveComponent for the types whose guid is the compile-time constant of the type (every component: the same in every binary, only the bit id is per binary).
+    template<typename T_COMPONENT>
+    inline T_COMPONENT* ComponentOf( xECSEditor& Ecs, xecs::component::entity Entity ) noexcept
+    {
+        const xecs::component::type::info* pInfo = nullptr;
+        return static_cast<T_COMPONENT*>(Ecs.ResolveComponent(Entity, xecs::component::type::info_v<T_COMPONENT>.m_Guid, pInfo));
+    }
+
+    // The same with types: the guid of a component type is the compile-time constant of the type (the same in every binary), only the bit id is per binary.
+    template<typename... T_COMPONENTS>
+    inline xecs::component::entity CreateEntityOf( xECSEditor& Ecs ) noexcept
+    {
+        const std::array<xecs::component::type::guid, sizeof...(T_COMPONENTS)> Guids{ xecs::component::type::info_v<T_COMPONENTS>.m_Guid... };
+        return Ecs.CreateEntity(Guids);
+    }
+    template<typename... T_COMPONENTS>
+    inline xecs::component::entity AddComponentsOf( xECSEditor& Ecs, xecs::component::entity Entity ) noexcept
+    {
+        const std::array<xecs::component::type::guid, sizeof...(T_COMPONENTS)> Guids{ xecs::component::type::info_v<T_COMPONENTS>.m_Guid... };
+        return Ecs.AddComponents(Entity, Guids);
+    }
+
+    // The editor of the game a world belongs to, for a world that an editor made (every world of the Level editors).
+    inline xECSEditor& Ecs( xecs::game_mgr::instance& World ) noexcept;
+
     // The factory every copy of the core exports (extern "C"): a new editor for a new game, owned by the caller (Release).
     constexpr const char* kCreateEditorName = "XLionCore_CreateEditor";
     using pfn_create_editor = xECSEditor* (*)() noexcept;
@@ -65,6 +104,8 @@ namespace xlioncore
         auto* pGame = game::From(World);
         return pGame ? pGame->m_pEditor : nullptr;
     }
+
+    inline xECSEditor& Ecs( xecs::game_mgr::instance& World ) noexcept { return *EditorOf(World); }
 }
 
 #endif // XLIONCORE_EDITOR_H

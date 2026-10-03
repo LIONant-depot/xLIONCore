@@ -33,6 +33,80 @@ namespace
         void UnregisterPlugin(xecs::plugin::token Token) noexcept override { xecs::component::mgr::UnregisterPlugin(Token); }
         void ResetRegistrations() noexcept override { xecs::component::mgr::resetRegistrations(); }
 
+        // ---- entities
+        template<typename T> T* Get(xecs::component::entity Entity) noexcept
+        {
+            if (!m_Game.m_pGameMgr || !Entity.isValid()) return nullptr;
+            auto& Details = m_Game.m_pGameMgr->m_ComponentMgr.getEntityDetails(Entity);
+            if (!Details.m_pPool || !Details.m_pPool->m_pArchetype->getComponentBits().getBit(xecs::component::type::info_v<T>.m_BitID)) return nullptr;
+            return &Details.m_pPool->getComponent<T>(Details.m_PoolIndex);
+        }
+
+        bool IsAlive(xecs::component::entity Entity) noexcept override
+        {
+            return m_Game.m_pGameMgr && Entity.isValid() && m_Game.m_pGameMgr->m_ComponentMgr.getEntityDetails(Entity).m_pPool != nullptr;
+        }
+
+        void* ResolveComponent(xecs::component::entity Entity, xecs::component::type::guid Type, const xecs::component::type::info*& pInfo) noexcept override
+        {
+            pInfo = nullptr;
+            if (!m_Game.m_pGameMgr || !Entity.isValid()) return nullptr;
+            auto& World = *m_Game.m_pGameMgr;
+            const auto* pType = World.m_ComponentMgr.findComponentTypeInfo(Type);
+            if (!pType) return nullptr;
+
+            auto& Details = World.m_ComponentMgr.getEntityDetails(Entity);
+            if (!Details.m_pPool) return nullptr;
+            const auto iType = Details.m_pPool->findIndexComponentFromInfo(*pType);
+            if (iType >= 0)
+            {
+                pInfo = pType;
+                return &Details.m_pPool->m_pComponent[iType][Details.m_PoolIndex.m_Value * pType->m_Size];
+            }
+            // SHARE components live on a share-entity referenced by the pool family, not in the entity data pool.
+            if (pType->m_TypeID == xecs::component::type::id::SHARE && Details.m_pPool->m_pMyFamily)
+            {
+                auto* pFamily = Details.m_pPool->m_pMyFamily;
+                for (int i = 0, end = static_cast<int>(pFamily->m_ShareInfos.size()); i < end; ++i)
+                {
+                    if (pFamily->m_ShareInfos[i]->m_Guid.m_Value != pType->m_Guid.m_Value) continue;
+                    auto& ShareDetails = World.m_ComponentMgr.getEntityDetails(pFamily->m_ShareDetails[i].m_Entity);
+                    if (!ShareDetails.m_pPool) break;
+                    const auto iShare = ShareDetails.m_pPool->findIndexComponentFromInfo(*pType);
+                    if (iShare < 0) break;
+                    pInfo = pType;
+                    return &ShareDetails.m_pPool->m_pComponent[iShare][ShareDetails.m_PoolIndex.m_Value * pType->m_Size];
+                }
+            }
+            return nullptr;
+        }
+
+        xecs::component::parent*   ParentOf(xecs::component::entity Entity) noexcept override { return Get<xecs::component::parent>(Entity); }
+        xecs::component::children* ChildrenOf(xecs::component::entity Entity) noexcept override { return Get<xecs::component::children>(Entity); }
+        void DeleteEntity(xecs::component::entity Entity) noexcept override { if (m_Game.m_pGameMgr) m_Game.m_pGameMgr->DeleteEntity(Entity); }
+
+        std::vector<const xecs::component::type::info*> InfosOf(std::span<const xecs::component::type::guid> Guids) noexcept
+        {
+            std::vector<const xecs::component::type::info*> Infos;
+            for (const auto& G : Guids) if (const auto* p = xecs::component::mgr::findComponentTypeInfo(G)) Infos.push_back(p);
+            return Infos;
+        }
+        xecs::component::entity CreateEntity(std::span<const xecs::component::type::guid> Components) noexcept override
+        {
+            const auto Infos = InfosOf(Components);
+            return m_Game.m_pGameMgr->getOrCreateArchetype(Infos).CreateEntity();
+        }
+        xecs::component::entity AddComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add) noexcept override
+        {
+            const auto Infos = InfosOf(Add);
+            return m_Game.m_pGameMgr->AddOrRemoveComponents(Entity, Infos, std::span<const xecs::component::type::info* const>{});
+        }
+        xecs::component::entity RemoveComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Remove) noexcept override
+        {
+            const auto Infos = InfosOf(Remove);
+            return m_Game.m_pGameMgr->AddOrRemoveComponents(Entity, std::span<const xecs::component::type::info* const>{}, Infos);
+        }
+
         void Run() noexcept override { m_Game.Run(); }
         void StepOnce() noexcept override { m_Game.StepOnce(); }
         void RunSystems() noexcept override { if (m_Game.m_pGameMgr) m_Game.m_pGameMgr->Run(); }

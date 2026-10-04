@@ -51,21 +51,43 @@ namespace xlioncore
     // The world pose of an entity that is a root (pParent null: its Transform is the world pose) or a child (its parent component has it).
     inline world_pose WorldOf(const transform& T, const xecs::component::parent* pParent) noexcept { return pParent ? PoseOf(*pParent) : PoseOf(T); }
 
+    // The turn of Rotation around the vertical (y) axis alone: its twist (swing-twist split), the heading of what it turns. Identity when there is none to take (it points up or down).
+    inline xmath::fquat HeadingOf(const xmath::fquat& Rotation) noexcept
+    {
+        const float L = std::sqrt(Rotation.m_Y * Rotation.m_Y + Rotation.m_W * Rotation.m_W);
+        return L < 1.0e-6f ? xmath::fquat::fromIdentity() : xmath::fquat(0.0f, Rotation.m_Y / L, 0.0f, Rotation.m_W / L);
+    }
+
+    // The rotation of the parent that the child takes: all of it, only its heading, or none (identity).
+    inline xmath::fquat FollowedRotation(const world_pose& Parent, std::uint8_t Follow) noexcept
+    {
+        using P = xecs::component::parent;
+        if (Follow & P::FOLLOW_ROTATION) return Parent.m_Rotation;
+        if (Follow & P::FOLLOW_HEADING)  return HeadingOf(Parent.m_Rotation);
+        return xmath::fquat::fromIdentity();
+    }
+
+    // The scale of the parent that the child takes, axis by axis (1 for an axis it does not take).
+    inline xmath::fvec3 FollowedScale(const world_pose& Parent, std::uint8_t Follow) noexcept
+    {
+        using P = xecs::component::parent;
+        return xmath::fvec3((Follow & P::FOLLOW_SCALE_X) ? Parent.m_Scale.m_X : 1.0f, (Follow & P::FOLLOW_SCALE_Y) ? Parent.m_Scale.m_Y : 1.0f, (Follow & P::FOLLOW_SCALE_Z) ? Parent.m_Scale.m_Z : 1.0f);
+    }
+
     // The world pose of a child whose parent is at Parent and whose own (relative) Transform is Local, taking from the parent what Follow says.
     inline world_pose Compose(const world_pose& Parent, const transform& Local, std::uint8_t Follow) noexcept
     {
         using P = xecs::component::parent;
-        const bool bScale = (Follow & P::FOLLOW_SCALE)    != 0;
-        const bool bRot   = (Follow & P::FOLLOW_ROTATION) != 0;
+        const xmath::fquat  Turn  = FollowedRotation(Parent, Follow);
+        const xmath::fvec3  Scale = FollowedScale(Parent, Follow);
 
         world_pose W;
-        W.m_Scale    = bScale ? xmath::fvec3(Parent.m_Scale.m_X * Local.m_Scale.m_X, Parent.m_Scale.m_Y * Local.m_Scale.m_Y, Parent.m_Scale.m_Z * Local.m_Scale.m_Z) : Local.m_Scale;
-        W.m_Rotation = bRot ? Parent.m_Rotation * Local.m_Rotation : Local.m_Rotation;
+        W.m_Scale    = xmath::fvec3(Scale.m_X * Local.m_Scale.m_X, Scale.m_Y * Local.m_Scale.m_Y, Scale.m_Z * Local.m_Scale.m_Z);
+        W.m_Rotation = Turn * Local.m_Rotation;
 
-        xmath::fvec3 Offset = Local.m_Position;
-        if (bScale) Offset = xmath::fvec3(Offset.m_X * Parent.m_Scale.m_X, Offset.m_Y * Parent.m_Scale.m_Y, Offset.m_Z * Parent.m_Scale.m_Z);
-        if (bRot)   Offset = Parent.m_Rotation.RotateVector(Offset);
-        W.m_Position = Parent.m_Position + Offset;
+        // the offset is in the frame of the parent: scaled by what is followed of its scale, turned by what is followed of its rotation
+        const xmath::fvec3 Scaled(Local.m_Position.m_X * Scale.m_X, Local.m_Position.m_Y * Scale.m_Y, Local.m_Position.m_Z * Scale.m_Z);
+        W.m_Position = Parent.m_Position + Turn.RotateVector(Scaled);
 
         // an axis that does not follow: the child's own value, in the world
         if (!(Follow & P::FOLLOW_X)) W.m_Position.m_X = Local.m_Position.m_X;
@@ -80,18 +102,17 @@ namespace xlioncore
     inline void LocalFromWorld(const world_pose& Parent, const world_pose& New, std::uint8_t Follow, bool bPosition, bool bRotation, bool bScale, transform& Local) noexcept
     {
         using P = xecs::component::parent;
-        const bool bFollowScale = (Follow & P::FOLLOW_SCALE)    != 0;
-        const bool bFollowRot   = (Follow & P::FOLLOW_ROTATION) != 0;
-        if (bScale)    Local.m_Scale = bFollowScale ? xmath::fvec3(New.m_Scale.m_X / Parent.m_Scale.m_X, New.m_Scale.m_Y / Parent.m_Scale.m_Y, New.m_Scale.m_Z / Parent.m_Scale.m_Z) : New.m_Scale;
-        if (bRotation) Local.m_Rotation = bFollowRot ? Parent.m_Rotation.InverseCopy() * New.m_Rotation : New.m_Rotation;
+        const xmath::fquat Turn  = FollowedRotation(Parent, Follow);
+        const xmath::fvec3 Scale = FollowedScale(Parent, Follow);
+        if (bScale)    Local.m_Scale    = xmath::fvec3(New.m_Scale.m_X / Scale.m_X, New.m_Scale.m_Y / Scale.m_Y, New.m_Scale.m_Z / Scale.m_Z);
+        if (bRotation) Local.m_Rotation = Turn.InverseCopy() * New.m_Rotation;
         if (bPosition)
         {
-            xmath::fvec3 Offset = New.m_Position - Parent.m_Position;
-            if (bFollowRot)   Offset = Parent.m_Rotation.InverseCopy().RotateVector(Offset);
-            if (bFollowScale) Offset = xmath::fvec3(Offset.m_X / Parent.m_Scale.m_X, Offset.m_Y / Parent.m_Scale.m_Y, Offset.m_Z / Parent.m_Scale.m_Z);
-            Local.m_Position.m_X = (Follow & P::FOLLOW_X) ? Offset.m_X : New.m_Position.m_X;
-            Local.m_Position.m_Y = (Follow & P::FOLLOW_Y) ? Offset.m_Y : New.m_Position.m_Y;
-            Local.m_Position.m_Z = (Follow & P::FOLLOW_Z) ? Offset.m_Z : New.m_Position.m_Z;
+            const xmath::fvec3 Offset = Turn.InverseCopy().RotateVector(New.m_Position - Parent.m_Position);
+            const xmath::fvec3 Unscaled(Offset.m_X / Scale.m_X, Offset.m_Y / Scale.m_Y, Offset.m_Z / Scale.m_Z);
+            Local.m_Position.m_X = (Follow & P::FOLLOW_X) ? Unscaled.m_X : New.m_Position.m_X;
+            Local.m_Position.m_Y = (Follow & P::FOLLOW_Y) ? Unscaled.m_Y : New.m_Position.m_Y;
+            Local.m_Position.m_Z = (Follow & P::FOLLOW_Z) ? Unscaled.m_Z : New.m_Position.m_Z;
         }
     }
 

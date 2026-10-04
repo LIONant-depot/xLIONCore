@@ -61,6 +61,12 @@ void XScript_GetComponentDisplayInfo(xscript::pfn_component_display_visitor pVis
 {
     for (auto* p = xscript::self_registration<xscript::component_entry>::s_pHead; p; p = p->m_pNext)
         pVisitor(pUserData, p->m_Value.m_Guid, p->m_Value.m_pName, p->m_Value.m_pCategory, p->m_Value.m_Priority);
+
+    // The hierarchy is xECS's own (it registers parent and children itself), so it announces itself here: with the Transform it belongs to, in the Basics.
+    const auto& Parent   = xecs::component::type::info_v<xecs::component::parent>;
+    const auto& Children = xecs::component::type::info_v<xecs::component::children>;
+    pVisitor(pUserData, Parent.m_Guid.m_Value,   Parent.m_pName,   "Basics", 2);
+    pVisitor(pUserData, Children.m_Guid.m_Value, Children.m_pName, "Basics", 3);
 }
 
 namespace xlioncore::physics

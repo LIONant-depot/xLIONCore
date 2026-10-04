@@ -35,6 +35,7 @@ add_library(xLIONCore SHARED
   "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_physics_backend.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../src/physics/xlioncore_plugin_entry.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../../src/game/xlioncore_editor.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../src/resources/xlioncore_resources.cpp"
 )
 set_target_properties(xLIONCore PROPERTIES OUTPUT_NAME "LIONCore")
 target_include_directories(xLIONCore PRIVATE
@@ -51,9 +52,41 @@ target_include_directories(xLIONCore PRIVATE
   "${CMAKE_SOURCE_DIR}/dependencies/xscheduler"
   "${CMAKE_SOURCE_DIR}/dependencies/xmath"
   "${CMAKE_SOURCE_DIR}/dependencies/xbits"
+  "${CMAKE_SOURCE_DIR}/dependencies/xGPU"
+  "${CMAKE_SOURCE_DIR}/dependencies/xbitmap"
+  "${CMAKE_SOURCE_DIR}/dependencies/xserializer"
+  "${CMAKE_SOURCE_DIR}/dependencies/xcompression"
+  "${CMAKE_SOURCE_DIR}/dependencies/xfile"
+  "${CMAKE_SOURCE_DIR}/dependencies/xresource_mgr"
+  "${CMAKE_SOURCE_DIR}/plugins/xfont.plugin/source"
+  "${CMAKE_SOURCE_DIR}/plugins/xtexture.plugin/source"
 )
 target_compile_definitions(xLIONCore PRIVATE XECS_BUILD_SHARED XECS_EXPORTS XLIONCORE_BUILD_SHARED XLIONCORE_EXPORTS)
-target_link_libraries(xLIONCore PRIVATE box3d::box3d)
+# The resource system of the core (src/resources) makes textures on the device of the host: it needs xGPU, the same static library the renderer links.
+target_link_libraries(xLIONCore PRIVATE box3d::box3d xGPU)
+
+# ... and what its loaders read the compiled resources with: the sources of these components (registered by their own depots, see xcmake_tools' DefineInterfaceComponent) are compiled
+# into this DLL, the way every binary that needs them compiles its own copy (nothing of them is exported).
+foreach(COMP xbitmap xfile xserializer xcompression zstd)
+  get_property(COMP_FILES GLOBAL PROPERTY ${COMP}_FILES)
+  get_property(COMP_INCLUDES GLOBAL PROPERTY ${COMP}_INCLUDES)
+  # (their paths are relative to the root of the project, and only what is compiled matters here)
+  list(FILTER COMP_FILES INCLUDE REGEX "\\.(c|cpp)$")
+  foreach(COMP_FILE ${COMP_FILES})
+    if(IS_ABSOLUTE "${COMP_FILE}")
+      target_sources(xLIONCore PRIVATE "${COMP_FILE}")
+    else()
+      target_sources(xLIONCore PRIVATE "${CMAKE_SOURCE_DIR}/${COMP_FILE}")
+    endif()
+  endforeach()
+  foreach(COMP_INCLUDE ${COMP_INCLUDES})
+    if(IS_ABSOLUTE "${COMP_INCLUDE}")
+      target_include_directories(xLIONCore PRIVATE "${COMP_INCLUDE}")
+    else()
+      target_include_directories(xLIONCore PRIVATE "${CMAKE_SOURCE_DIR}/${COMP_INCLUDE}")
+    endif()
+  endforeach()
+endforeach()
 if(WIN32)
   target_link_libraries(xLIONCore PRIVATE Advapi32.lib)
 endif()

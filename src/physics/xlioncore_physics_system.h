@@ -59,10 +59,11 @@ namespace xlioncore::physics
     struct system : xecs::system::instance
     {
         constexpr static auto typedef_v = xecs::system::type::update{ .m_pName = "Physics" };
-        // What OnUpdate actually touches. none_of<static_tag>: statics never need revisiting once built.
+        // What OnUpdate actually touches. none_of<static_tag>: statics never need revisiting once built. none_of<parent>: a child's Transform is relative to its parent, so it cannot be
+        // a body (only a root is: see xlioncore_hierarchy.h).
         using query = std::tuple
             < xecs::query::must     < xlioncore::transform, physics_body >
-            , xecs::query::none_of  < xlioncore::static_tag >
+            , xecs::query::none_of  < xlioncore::static_tag, xecs::component::parent >
             , xecs::query::optional < physics_dynamics >
             >;
 
@@ -235,7 +236,7 @@ namespace xlioncore::physics
 
             xecs::query::instance Query;
             Query.m_Must.AddFromComponents< xlioncore::transform, physics_body >();
-            Query.m_NoneOf.AddFromComponents< xlioncore::static_tag >();
+            Query.m_NoneOf.AddFromComponents< xlioncore::static_tag, xecs::component::parent >();
             auto S = Search(Query);
 
             int nEnt = 0, nNull = 0, nDyn = 0, nKin = 0, nHasDynComp = 0;
@@ -314,7 +315,7 @@ namespace xlioncore::physics
                 {
                     xecs::query::instance DirtyQuery;
                     DirtyQuery.m_Must.AddFromComponents<xlioncore::transform, physics_body>();
-                    DirtyQuery.m_NoneOf.AddFromComponents<xlioncore::static_tag, physics_dynamics>();
+                    DirtyQuery.m_NoneOf.AddFromComponents<xlioncore::static_tag, physics_dynamics, xecs::component::parent>();
                     auto DirtySet = Search(DirtyQuery);
 
                     Foreach(DirtySet, [&](const xecs::component::entity& Entity, xlioncore::transform& T, physics_body& Body) noexcept

@@ -2,8 +2,8 @@
 #define XLIONCORE_TRANSFORM_H
 #pragma once
 
-// World-space Transform shared by physics + render. No hierarchy this pass - pose is always
-// world. Registered by LIONCore.dll (xlioncore_plugin_entry.cpp); xLIONRender SyncLocalBitIDs's it.
+// Transform shared by physics + render: the WORLD pose of an entity that has no parent component (a root), RELATIVE to its parent for one that has (a child; its world pose is derived,
+// see xlioncore_hierarchy.h: ask WorldOf, never read m_Position as world). Registered by LIONCore.dll (xlioncore_plugin_entry.cpp); xLIONRender SyncLocalBitIDs's it.
 //
 // Physics sync (V1 follow-up): m_DirtyToPhysics. Editor/gameplay pose edits set Dirty=1 via
 // MarkDirtyToPhysics(). Physics Box3D->ECS writeback must NEVER set Dirty. No physics_teleportation_tag.

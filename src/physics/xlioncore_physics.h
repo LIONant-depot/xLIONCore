@@ -163,13 +163,15 @@ namespace xlioncore::physics
     // A shape (the visitor) started overlapping a sensor shape. Every shape can be a visitor (the collision filter of the two decides); a sensor is a collider with m_IsSensor.
     struct sensor_begin_event : xecs::event::instance<sensor_touch>
     {
-        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Sensor Begin", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::sensor_begin_event" } };
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Sensor Begin", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::sensor_begin_event" }
+            , .m_pHelp = "A shape (the visitor) started overlapping a sensor shape (a collider with IsSensor). The handler is given a sensor_touch: the Sensor entity, the Visitor entity and their two shapes. Sent by the Physics system right after the fixed step that produced it (before the systems connected to After Step run), once per step, sorted by entity." };
     };
 
     // It stopped overlapping it. Not sent when the visitor (or the sensor) was destroyed in between: there is no entity to name any more.
     struct sensor_end_event : xecs::event::instance<sensor_touch>
     {
-        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Sensor End", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::sensor_end_event" } };
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Sensor End", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::sensor_end_event" }
+            , .m_pHelp = "The visitor stopped overlapping the sensor. The handler is given a sensor_touch (Sensor, Visitor, shapes). Not sent when one of them was destroyed in between. Sent by the Physics system right after the fixed step that produced it (before the systems connected to After Step run), once per step, sorted by entity." };
     };
 
     // Solid bodies touching. Sent for the shapes that have ContactEvents on (when either of the two shapes of the pair has it), with the pair in Box3D's order (a handler looks at both: the ball is A or B).
@@ -177,19 +179,22 @@ namespace xlioncore::physics
     // The two shapes began touching.
     struct contact_begin_event : xecs::event::instance<contact_touch>
     {
-        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact Begin", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_begin_event" } };
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact Begin", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_begin_event" }
+            , .m_pHelp = "Two solid shapes began touching (only shapes with ContactEvents on). The handler is given a contact_touch: the entities and shapes of both, in Box3D order. Sent by the Physics system right after the fixed step that produced it (before the systems connected to After Step run), once per step, sorted by entity." };
     };
 
     // They stopped touching (not sent when one of them was destroyed in between).
     struct contact_end_event : xecs::event::instance<contact_touch>
     {
-        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact End", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_end_event" } };
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact End", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_end_event" }
+            , .m_pHelp = "Two solid shapes stopped touching. The handler is given a contact_touch (entities and shapes of both). Not sent when one of them was destroyed in between. Sent by the Physics system right after the fixed step that produced it (before the systems connected to After Step run), once per step, sorted by entity." };
     };
 
     // They hit each other faster than the world's hit threshold (1 meter per second): where, which way and how fast (see contact_hit). A rolling or resting contact is not a hit.
     struct contact_hit_event : xecs::event::instance<contact_hit>
     {
-        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact Hit", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_hit_event" } };
+        constexpr static auto typedef_v = xecs::event::type::global{ .m_pName = "Physics Contact Hit", .m_Guid = xecs::event::type::guid{ "xlioncore::physics::contact_hit_event" }
+            , .m_pHelp = "Two solid shapes hit each other faster than the hit threshold (1 m/s). The handler is given a contact_hit: both entities and shapes, the point, the normal and the approach speed. A rolling or resting contact is not a hit. Sent by the Physics system right after the fixed step that produced it (before the systems connected to After Step run), once per step, sorted by entity." };
     };
 }
 

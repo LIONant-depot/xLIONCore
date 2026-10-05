@@ -32,6 +32,34 @@ namespace xlioncore
     // Basics category, same as Transform - whether an entity moves at all is as fundamental as its
     // pose, not a physics implementation detail. Priority 1 sorts it right after Transform (0).
     XSCRIPT_REGISTER_COMPONENT(static_tag, "Basics", 1)
+
+    // "This entity is disabled": it is out of the game. Authored state, saved with the scene (the editor's own, xecs::editor::disable_tag, is saved with the scene too and left out of the game by the scene compiler). An EXCLUSIVE tag - an entity that has one only matches the queries of the systems that name that tag, so every system (physics, the
+    // render, the scripts of a game, ...) skips it without a line of code in any of them: disabling is adding this, enabling is removing it. Nothing is destroyed or lost, the entity and all its
+    // components are as they were.
+    // (A physics body that already exists is not touched yet: see the note in the docs, documentation/Editors/disable_tags.md.)
+    struct disable_tag
+    {
+        constexpr static auto typedef_v = xecs::component::type::exclusive_tag
+        { .m_Guid  = xecs::component::type::guid{ "xlioncore::disable" }
+        , .m_pName = "disable"
+        };
+
+        XPROPERTY_DEF("disable", disable_tag)
+    };
+    XSCRIPT_REGISTER_COMPONENT(disable_tag, "Basics", 4)
+
+    // "Do not draw this entity." A regular tag the render systems exclude (none_of<no_render_tag>) in every view: the entity goes on existing and running - physics, scripts - it is only not drawn
+    // (and not picked in the viewport, where there is nothing to click). Authored state, saved with the scene; the editor has its own (xecs::editor::no_render_tag) that only its scene view honors.
+    struct no_render_tag
+    {
+        constexpr static auto typedef_v = xecs::component::type::tag
+        { .m_Guid  = xecs::component::type::guid{ "xlioncore::no_render" }
+        , .m_pName = "no_render"
+        };
+
+        XPROPERTY_DEF("no_render", no_render_tag)
+    };
+    XSCRIPT_REGISTER_COMPONENT(no_render_tag, "Basics", 5)
 }
 
 #endif // XLIONCORE_TAGS_H

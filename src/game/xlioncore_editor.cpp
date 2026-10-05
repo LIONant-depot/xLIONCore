@@ -26,7 +26,7 @@ namespace
         void RegisterHostComponents() noexcept override
         {
             auto& World = *m_Game.m_pGameMgr;
-            World.RegisterComponents<xecs::editor::prefab_instance, xecs::component::entity_reference>();
+            World.RegisterComponents<xecs::editor::prefab_instance, xecs::component::entity_reference, xecs::editor::disable_tag, xecs::editor::no_render_tag>();
             XecsPlugin_RegisterComponents(World, xecs::plugin::host_v);
         }
         void RegisterHostSystems() noexcept override { XecsPlugin_RegisterSystems(*m_Game.m_pGameMgr); }

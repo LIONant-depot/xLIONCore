@@ -4,6 +4,7 @@
 #include "xlioncore_physics_system.h"
 #include "xlioncore_physics_api.h"
 #include "../transform/xlioncore_transform.h"
+#include "../tags/xlioncore_tags.h"
 #include "../demo/xlioncore_demo_share.h"
 #include "../demo/xlioncore_demo_systems.h"
 #include "xecs_plugin_api.h"
@@ -67,6 +68,12 @@ void XScript_GetComponentDisplayInfo(xscript::pfn_component_display_visitor pVis
     const auto& Children = xecs::component::type::info_v<xecs::component::children>;
     pVisitor(pUserData, Parent.m_Guid.m_Value,   Parent.m_pName,   "Basics", 2);
     pVisitor(pUserData, Children.m_Guid.m_Value, Children.m_pName, "Basics", 3);
+
+    // The state of the entity in the editor (the Level Tree's power and eye): in the Basics too, after the runtime ones.
+    const auto& EditorDisable  = xecs::component::type::info_v<xecs::editor::disable_tag>;
+    const auto& EditorNoRender = xecs::component::type::info_v<xecs::editor::no_render_tag>;
+    pVisitor(pUserData, EditorDisable.m_Guid.m_Value,  EditorDisable.m_pName,  "Basics", 6);
+    pVisitor(pUserData, EditorNoRender.m_Guid.m_Value, EditorNoRender.m_pName, "Basics", 7);
 }
 
 namespace xlioncore::physics

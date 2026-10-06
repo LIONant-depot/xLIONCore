@@ -70,9 +70,12 @@ namespace xlioncore::physics
         backend                    m_Backend;
 
         // The places where other systems connect to the physics: they run once for each fixed step.
+        // What the connectors give to the systems connected to them (see xecs::system::constraint): both run once for every fixed step, so both give a fixed delta time. That one is before the
+        // step and the other after it is where the person places a system, not something a system needs.
+        static constexpr auto m_FixedStepGives = xecs::system::constraint::provides_v< xlioncore::constraint::fixed_delta_time >;
         static constexpr std::array<xecs::system::connector, 2> connectors_v
-        { { { "Before Step", "Runs once for every fixed step, right before the world takes it: where the systems that push on bodies (forces, kicks, a person running) belong" }
-          , { "After Step",  "Runs once for every fixed step, right after the world took it: where the systems that read what the step did belong" }
+        { { { "Before Step", "Runs once for every fixed step, right before the world takes it: where the systems that push on bodies (forces, kicks, a person running) belong", m_FixedStepGives }
+          , { "After Step",  "Runs once for every fixed step, right after the world took it: where the systems that read what the step did belong",                         m_FixedStepGives }
         } };
 
         std::vector<b3BodyId>      m_PendingDestroy;   // queued by destroy_notify::OnNotify, drained in OnPostStructuralChanges

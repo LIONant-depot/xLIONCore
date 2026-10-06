@@ -24,11 +24,29 @@ namespace xlioncore { struct xECSEditor; }
 namespace xlioncore
 {
     //---------------------------------------------------------------------------------------------
+    // The constraints of the systems of a game (see xecs::system::constraint): what a system needs of the place it is placed in. The connectors of the physics system give them.
+    //---------------------------------------------------------------------------------------------
+    namespace constraint
+    {
+        // Every time the system runs the game moves forward by exactly m_FixedDeltaTime. Where the system runs relative to the step (before it, after it) is a choice of where it is placed, not
+        // a constraint: any place that gives this one works.
+        struct fixed_delta_time
+        {
+            static constexpr auto typedef_v = xecs::system::constraint::def
+            { .m_pName          = "Fixed Delta Time"
+            , .m_pDescription   = "Every time the system runs, the game moves forward by exactly one fixed delta time (1/60 s): it runs once for each fixed step the game's time says is due, as many times in a frame as that, none when no step is due. A system that works with the physics needs this: its delta time is always the same" };
+        };
+    }
+
+    //---------------------------------------------------------------------------------------------
     // The time of a game. The editor sets m_TimeScale (the speed slider) and m_bPaused; Advance() is called once a frame by game::Run.
     //
     //   m_RealDeltaTime   what the last frame really took (never more than m_MaxRealDeltaTime: a breakpoint is not game time)
     //   m_DeltaTime       the same times m_TimeScale: what gameplay that follows the frame reads
     //   m_FixedDeltaTime  the size of one fixed step (1/60): what the physics and everything that works with it reads
+    //   m_FixedInterpolate how far between the last two fixed states this frame is drawn: m_FixedAccumulator / m_FixedDeltaTime (0..1), 1 when there is nothing to blend (a game that has not
+    //                     started, a single Step). What draws a thing that the fixed steps move blends its previous pose and its current one with it: what is drawn is then always one
+    //                     step behind the game, and never jumps. Gameplay never reads it: the rules work on the state of the last step.
     //   m_FixedSteps      how many fixed steps are due this frame:
     //                         m_FixedAccumulator += m_DeltaTime;  while( m_FixedAccumulator >= m_FixedDeltaTime ) { run a fixed step; m_FixedAccumulator -= m_FixedDeltaTime; }
     //                     what the accumulator may hold is capped (m_MaxFixedAccumulated): past that the game runs slower than real time
@@ -60,6 +78,7 @@ namespace xlioncore
         float           m_DeltaTime             = 0.0f;
         float           m_FixedAccumulator      = 0.0f;
         int             m_FixedSteps            = 0;
+        float           m_FixedInterpolate      = 1.0f;                     // see above
         double          m_Time                  = 0.0;                      // game time: the sum of m_DeltaTime
         double          m_FixedTime             = 0.0;                      // the sum of the fixed steps taken
         std::uint64_t   m_FramesComputed        = 0;                        // frames the game really ran (a paused game does not count)
@@ -69,6 +88,7 @@ namespace xlioncore
         void Reset() noexcept
         {
             m_RealDeltaTime = m_DeltaTime = m_FixedAccumulator = 0.0f;
+            m_FixedInterpolate = 1.0f;
             m_FixedSteps = 0; m_Time = m_FixedTime = 0.0; m_FramesComputed = m_FixedStepsComputed = 0;
         }
 
@@ -82,6 +102,7 @@ namespace xlioncore
             m_FixedAccumulator = std::min(m_FixedAccumulator + m_DeltaTime, m_MaxFixedAccumulated);
             m_FixedSteps = 0;
             while( m_FixedAccumulator >= m_FixedDeltaTime ) { m_FixedAccumulator -= m_FixedDeltaTime; ++m_FixedSteps; }
+            m_FixedInterpolate = m_FixedDeltaTime > 0.0f ? std::clamp(m_FixedAccumulator / m_FixedDeltaTime, 0.0f, 1.0f) : 1.0f;
 
             m_FixedTime         += m_FixedSteps * static_cast<double>(m_FixedDeltaTime);
             m_FixedStepsComputed += static_cast<std::uint64_t>(m_FixedSteps);
@@ -95,6 +116,7 @@ namespace xlioncore
             m_DeltaTime     = m_FixedDeltaTime;
             m_Time         += m_DeltaTime;
             m_FixedSteps    = 1;
+            m_FixedInterpolate = 1.0f;
             m_FixedTime    += m_FixedDeltaTime;
             ++m_FixedStepsComputed;
             ++m_FramesComputed;

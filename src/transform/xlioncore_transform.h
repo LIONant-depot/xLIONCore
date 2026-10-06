@@ -123,10 +123,10 @@ namespace xlioncore
     XSCRIPT_REGISTER_COMPONENT(transform, "Basics", 0)
 
     // Draw this physics body between its last two fixed steps (opt-in: the presence of the component is the switch). The physics runs at a fixed rate and the frames do not, so a body drawn at
-    // its last step moves in little jumps (a 60 Hz game on a 144 Hz screen shows each pose for 2-3 frames). With this component the physics keeps the pose before the last step and blends it
-    // with the current one by game_time::m_FixedInterpolate: what is drawn is m_Position/m_Rotation here. VISUAL ONLY - the Transform stays the pose of the last step, and it is the one
-    // gameplay reads and writes; nothing but the render (WorldOf with this component) reads the blended pose. A body that is teleported, or whose Transform is edited, is drawn at its new
-    // pose at once (no blend across the jump). The scale is the Transform's. Written by the physics system, never saved.
+    // its last step moves in little jumps (a 60 Hz game on a 144 Hz screen shows each pose for 2-3 frames). With this component the physics keeps the pose before the last step, and the
+    // render draws a pose between it and the Transform (the pose of the last step) by game_time::m_FixedInterpolate. It is there to make the motion SMOOTH on the screen: VISUAL ONLY - the
+    // Transform is the one gameplay reads and writes, and nothing but the render (WorldOf with this component) reads the blended pose. A body that is too far from its previous pose (it was
+    // teleported, or it moves too fast for a step to be smoothed) is drawn at its Transform: there is nothing to smooth. The scale is the Transform's. Written by the physics system, never saved.
     struct render_transform
     {
         constexpr static auto typedef_v = xecs::component::type::data
@@ -134,21 +134,15 @@ namespace xlioncore
         , .m_pName = "RenderTransform"
         };
 
-        xmath::fvec3    m_PrevPosition  = xmath::fvec3::fromZero();             // the pose before the last fixed step
-        xmath::fquat    m_PrevRotation  = xmath::fquat::fromIdentity();
-        xmath::fvec3    m_Position      = xmath::fvec3::fromZero();             // the pose to draw
-        xmath::fquat    m_Rotation      = xmath::fquat::fromIdentity();
-        xmath::fvec3    m_CurPosition   = xmath::fvec3::fromZero();             // the Transform the pose to draw was blended towards: a Transform that is not this one anymore was edited since (a paused game is edited too), and is drawn as it is
-        xmath::fquat    m_CurRotation   = xmath::fquat::fromIdentity();
-        bool            m_bActive       = false;                               // m_Position/m_Rotation hold a blended pose (the physics has run): until then the Transform is drawn
-        bool            m_bSnap         = false;                                // the body was moved without motion (teleport): draw it where it is, once
+        constexpr static float kSnapDistance = 2.0f;                                                // meters: a body further than this from its previous pose is drawn where it is
 
-        // What the Inspector (and a test) can see of it while it plays: where it is drawn, and from where it was blended. Never saved.
+        xmath::fvec3    m_PrevPosition  = xmath::fvec3(std::numeric_limits<float>::quiet_NaN());    // the pose before the last fixed step (NaN until the physics has run: the Transform is drawn)
+        xmath::fquat    m_PrevRotation  = xmath::fquat::fromIdentity();
+
+        // What the Inspector (and a test) can see of it while it plays. Never saved.
         XPROPERTY_DEF
         ( "RenderTransform", render_transform
-        , obj_member<"Position",     &render_transform::m_Position,     member_flags<flags::SHOW_READONLY, flags::DONT_SAVE>>
         , obj_member<"PrevPosition", &render_transform::m_PrevPosition, member_flags<flags::SHOW_READONLY, flags::DONT_SAVE>>
-        , obj_member<"Active",       &render_transform::m_bActive,      member_flags<flags::SHOW_READONLY, flags::DONT_SAVE>>
         )
     };
     XSCRIPT_REGISTER_COMPONENT(render_transform, "Basics", 8)

@@ -13,6 +13,7 @@
 // Anything that needs the world pose of an entity that may be a child calls WorldOf(transform, parent*) with the parent component when the entity has one (null when not):
 // it never reads Transform::m_Position as world. The pose is the one of the last PropagateHierarchy: the render system runs it every frame, after everything that moves things.
 #include "xlioncore_transform.h"
+#include "../game/xlioncore_game.h"
 
 namespace xlioncore
 {
@@ -51,16 +52,25 @@ namespace xlioncore
     // The world pose of an entity that is a root (pParent null: its Transform is the world pose) or a child (its parent component has it).
     inline world_pose WorldOf(const transform& T, const xecs::component::parent* pParent) noexcept { return pParent ? PoseOf(*pParent) : PoseOf(T); }
 
-    // What to DRAW: the same, but a root that has a render_transform that is active (see it) is drawn at its blended pose between the last two fixed steps. Only the render asks this.
-    inline world_pose DrawnPoseOf(const transform& T, const render_transform* pRender) noexcept
+    // How far between the last two fixed steps the frame is drawn (game_time::m_FixedInterpolate; 1 when the world has no game).
+    inline float FixedInterpolateOf(xecs::game_mgr::instance& GameMgr) noexcept
     {
-        if (!pRender || !pRender->m_bActive) return PoseOf(T);
-        const auto& P = T.m_Position; const auto& Q = T.m_Rotation;
-        if (P.m_X != pRender->m_CurPosition.m_X || P.m_Y != pRender->m_CurPosition.m_Y || P.m_Z != pRender->m_CurPosition.m_Z
-         || Q.m_X != pRender->m_CurRotation.m_X || Q.m_Y != pRender->m_CurRotation.m_Y || Q.m_Z != pRender->m_CurRotation.m_Z || Q.m_W != pRender->m_CurRotation.m_W) return PoseOf(T);   // edited since the blend
-        return { pRender->m_Position, pRender->m_Rotation, T.m_Scale };
+        const auto* pGame = game::From(GameMgr);
+        return pGame ? pGame->m_Time.m_FixedInterpolate : 1.0f;
     }
-    inline world_pose WorldOf(const transform& T, const xecs::component::parent* pParent, const render_transform* pRender) noexcept { return pParent ? PoseOf(*pParent) : DrawnPoseOf(T, pRender); }
+
+    // What to DRAW: the same, but a root that has a render_transform is drawn between the pose before its last fixed step and its Transform, Interpolate (the game's m_FixedInterpolate) of the
+    // way. A body with no previous pose yet, or further from it than render_transform::kSnapDistance (teleported, or too fast to smooth), is drawn at its Transform. Only the render asks this.
+    inline world_pose DrawnPoseOf(const transform& T, const render_transform* pRender, float Interpolate) noexcept
+    {
+        if (!pRender || !pRender->m_PrevPosition.isFinite()) return PoseOf(T);
+        const xmath::fvec3 Move = T.m_Position - pRender->m_PrevPosition;
+        if (Move.Dot(Move) > render_transform::kSnapDistance * render_transform::kSnapDistance) return PoseOf(T);
+        return { pRender->m_PrevPosition + Move * Interpolate
+               , xmath::fquat::Slerp(pRender->m_PrevRotation, T.m_Rotation, Interpolate)
+               , T.m_Scale };
+    }
+    inline world_pose WorldOf(const transform& T, const xecs::component::parent* pParent, const render_transform* pRender, float Interpolate) noexcept { return pParent ? PoseOf(*pParent) : DrawnPoseOf(T, pRender, Interpolate); }
 
     // The turn of Rotation around the vertical (y) axis alone: its twist (swing-twist split), the heading of what it turns. Identity when there is none to take (it points up or down).
     inline xmath::fquat HeadingOf(const xmath::fquat& Rotation) noexcept
@@ -159,7 +169,8 @@ namespace xlioncore
         Query.m_Must.AddFromComponents<transform, xecs::component::children>();
         Query.m_NoneOf.AddFromComponents<xecs::component::parent>();
         auto S = System.Search(Query);
-        System.Foreach(S, [&](const transform& T, const xecs::component::children& C, const render_transform* pRender) noexcept { PropagateFrom(System, DrawnPoseOf(T, pRender), C.m_List, 0); });
+        const float Interpolate = FixedInterpolateOf(System.getGameMgr());
+        System.Foreach(S, [&](const transform& T, const xecs::component::children& C, const render_transform* pRender) noexcept { PropagateFrom(System, DrawnPoseOf(T, pRender, Interpolate), C.m_List, 0); });
     }
 }
 

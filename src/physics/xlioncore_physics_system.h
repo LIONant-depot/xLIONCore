@@ -242,6 +242,12 @@ namespace xlioncore::physics
             Query.m_NoneOf.AddFromComponents< xlioncore::static_tag, xecs::component::parent >();
             auto S = Search(Query);
 
+            // The bodies that ask to be drawn between the fixed steps (see render_transform).
+            xecs::query::instance RenderQuery;
+            RenderQuery.m_Must.AddFromComponents< xlioncore::transform, physics_body, xlioncore::render_transform >();
+            RenderQuery.m_NoneOf.AddFromComponents< xlioncore::static_tag, xecs::component::parent >();
+            auto RS = Search(RenderQuery);
+
             int nEnt = 0, nNull = 0, nDyn = 0, nKin = 0, nHasDynComp = 0;
             float yMin = 1e9f, yMax = -1e9f;
             float yFirstDyn = -999.f;
@@ -337,6 +343,14 @@ namespace xlioncore::physics
                 // same-frame-or-earlier kill never gets one more simulated tick. See QueueDestroy's comment.
                 DrainPendingDestroy();
 
+                // The pose the world is in before this step, for the bodies that are drawn between steps (see render_transform).
+                Foreach(RS, [&](const xecs::component::entity& Entity, const physics_body& Body, xlioncore::render_transform& R) noexcept
+                {
+                    if (Entity.isZombie() || B3_IS_NULL(Body.m_BodyId)) return;
+                    R.m_PrevPosition = m_Backend.GetPosition(Body.m_BodyId);
+                    R.m_PrevRotation = m_Backend.GetRotation(Body.m_BodyId);
+                });
+
                 m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
                 SendSensorEvents();
                 RunConnector(1);
@@ -364,6 +378,26 @@ namespace xlioncore::physics
                     pDyn->m_LinearVelocity  = m_Backend.GetLinearVelocity(Body.m_BodyId);
                     pDyn->m_AngularVelocity = m_Backend.GetAngularVelocity(Body.m_BodyId);
                 }
+            });
+
+            // What the render draws of the bodies that asked for it: the pose before the last step blended with the pose after it (T, which is untouched: it is what gameplay sees). Every
+            // frame, steps or not - the blend moves on with the time between steps. A body that has no pose to blend from yet, was teleported (m_bSnap), or is a kinematic body whose
+            // Transform was edited since the last step, is drawn where it is, once.
+            const float Alpha = pGame ? pGame->m_Time.m_FixedInterpolate : 1.0f;
+            Foreach(RS, [&](const physics_body& Body, const xlioncore::transform& T, xlioncore::render_transform& R) noexcept
+            {
+                const bool bEdited = T.m_DirtyToPhysics && Body.m_CachedBodyType != b3_dynamicBody;
+                if (!R.m_bActive || R.m_bSnap || bEdited)
+                {
+                    R.m_PrevPosition = T.m_Position;
+                    R.m_PrevRotation = T.m_Rotation;
+                    R.m_bActive      = true;
+                    R.m_bSnap        = false;
+                }
+                R.m_CurPosition = T.m_Position;
+                R.m_CurRotation = T.m_Rotation;
+                R.m_Position = R.m_PrevPosition + (T.m_Position - R.m_PrevPosition) * Alpha;
+                R.m_Rotation = xmath::fquat::Slerp(R.m_PrevRotation, T.m_Rotation, Alpha);
             });
 
             if (bLog && nSteps > 0)

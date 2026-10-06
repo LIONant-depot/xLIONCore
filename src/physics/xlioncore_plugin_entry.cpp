@@ -35,6 +35,7 @@ void XecsPlugin_RegisterSystems(xecs::game_mgr::instance& GameMgr) noexcept
     GameMgr.m_ComponentMgr.LockComponentTypes();
     xecs::component::mgr::SyncLocalBitIDs
         < xlioncore::transform
+        , xlioncore::render_transform
         , xlioncore::physics::physics_body_properties
         , xlioncore::physics::physics_collider_box
         , xlioncore::physics::physics_collider_sphere
@@ -93,6 +94,7 @@ namespace xlioncore::physics
         if (!pBody || pBody->m_CachedBodyType != b3_dynamicBody) return false;
 
         pSystem->TeleportBody(*pBody, Position, Rotation);
+        if (auto* pRender = GetComponentPtr<xlioncore::render_transform>(GameMgr, Entity)) pRender->m_bSnap = true;   // drawn at the new pose at once, not blended from the old one
         return true;
     }
 }

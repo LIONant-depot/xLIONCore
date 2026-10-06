@@ -51,6 +51,17 @@ namespace xlioncore
     // The world pose of an entity that is a root (pParent null: its Transform is the world pose) or a child (its parent component has it).
     inline world_pose WorldOf(const transform& T, const xecs::component::parent* pParent) noexcept { return pParent ? PoseOf(*pParent) : PoseOf(T); }
 
+    // What to DRAW: the same, but a root that has a render_transform that is active (see it) is drawn at its blended pose between the last two fixed steps. Only the render asks this.
+    inline world_pose DrawnPoseOf(const transform& T, const render_transform* pRender) noexcept
+    {
+        if (!pRender || !pRender->m_bActive) return PoseOf(T);
+        const auto& P = T.m_Position; const auto& Q = T.m_Rotation;
+        if (P.m_X != pRender->m_CurPosition.m_X || P.m_Y != pRender->m_CurPosition.m_Y || P.m_Z != pRender->m_CurPosition.m_Z
+         || Q.m_X != pRender->m_CurRotation.m_X || Q.m_Y != pRender->m_CurRotation.m_Y || Q.m_Z != pRender->m_CurRotation.m_Z || Q.m_W != pRender->m_CurRotation.m_W) return PoseOf(T);   // edited since the blend
+        return { pRender->m_Position, pRender->m_Rotation, T.m_Scale };
+    }
+    inline world_pose WorldOf(const transform& T, const xecs::component::parent* pParent, const render_transform* pRender) noexcept { return pParent ? PoseOf(*pParent) : DrawnPoseOf(T, pRender); }
+
     // The turn of Rotation around the vertical (y) axis alone: its twist (swing-twist split), the heading of what it turns. Identity when there is none to take (it points up or down).
     inline xmath::fquat HeadingOf(const xmath::fquat& Rotation) noexcept
     {
@@ -148,7 +159,7 @@ namespace xlioncore
         Query.m_Must.AddFromComponents<transform, xecs::component::children>();
         Query.m_NoneOf.AddFromComponents<xecs::component::parent>();
         auto S = System.Search(Query);
-        System.Foreach(S, [&](const transform& T, const xecs::component::children& C) noexcept { PropagateFrom(System, PoseOf(T), C.m_List, 0); });
+        System.Foreach(S, [&](const transform& T, const xecs::component::children& C, const render_transform* pRender) noexcept { PropagateFrom(System, DrawnPoseOf(T, pRender), C.m_List, 0); });
     }
 }
 

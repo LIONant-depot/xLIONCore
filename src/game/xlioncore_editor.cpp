@@ -18,7 +18,20 @@ namespace
         void          Release() noexcept override { delete this; }
         xlioncore::game& Game() noexcept override { return m_Game; }
 
-        xecs::game_mgr::instance& CreateWorld() noexcept override { return m_Game.CreateWorld(); }
+        xecs::prefab::mgr::save_redirect* m_pPrefabRedirect = nullptr;      // set on every world this copy makes (a Play rebuilds the world, the redirect stays)
+
+        xecs::game_mgr::instance& CreateWorld() noexcept override
+        {
+            auto& World = m_Game.CreateWorld();
+            World.m_PrefabMgr.m_pRedirect = m_pPrefabRedirect;
+            return World;
+        }
+        void DropPrefabTemplate(xecs::prefab::guid Prefab) noexcept override { if (m_Game.m_pGameMgr) m_Game.m_pGameMgr->m_PrefabMgr.DropTemplate(Prefab); }
+        void SetPrefabSaveRedirect(xecs::prefab::mgr::save_redirect* pRedirect) noexcept override
+        {
+            m_pPrefabRedirect = pRedirect;
+            if (m_Game.m_pGameMgr) m_Game.m_pGameMgr->m_PrefabMgr.m_pRedirect = pRedirect;
+        }
         void DestroyWorld() noexcept override { m_Game.DestroyWorld(); }
         void AbandonWorld() noexcept override { m_Game.AbandonWorld(); }
         xecs::game_mgr::instance* Native() noexcept override { return m_Game.m_pGameMgr.get(); }
@@ -292,6 +305,7 @@ namespace
             return NewEntity;
         }
         xecs::component::entity ResolvePrefabMember(xecs::prefab::guid Prefab, std::span<const std::uint64_t> Address) noexcept override { return xecs::prefab::recipe::FindTemplate(W(), Prefab, Address); }
+        xecs::component::entity ResolveBakedPrefabMember(xecs::prefab::guid Prefab, std::span<const std::uint64_t> Address) noexcept override { return W().m_PrefabMgr.FindBakedMember(Prefab, Address); }
         void PrefabMemberAddresses(xecs::prefab::guid Prefab, std::vector<xecs::editor::member_address>& Out) noexcept override
         {
             Out.clear();

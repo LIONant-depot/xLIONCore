@@ -29,7 +29,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 11;       // 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
+        static constexpr std::uint32_t kVersion = 12;       // 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -96,6 +96,11 @@ namespace xlioncore
         virtual std::vector<xecs::scene::component_dependency> CollectSceneComponentDependencies(xecs::scene::guid Scene) noexcept = 0;
         virtual xerr EnsureLoadedPrefab(xecs::prefab::guid Prefab) noexcept = 0;
         virtual xerr SavePrefab(xecs::prefab::guid Prefab) noexcept = 0;
+        // One writer per prefab (documentation/Editors/prefabs_plan.md 3.7): while another editor holds a prefab as its document, SavePrefab does not write the file, it hands the saved state to that editor
+        // (xecs::prefab::mgr::save_redirect). The redirect belongs to the caller, who keeps it alive and sets null before it goes; it stays on the worlds this copy of the core makes from here on.
+        virtual void SetPrefabSaveRedirect(xecs::prefab::mgr::save_redirect* pRedirect) noexcept = 0;
+        // The prefab changed on disk (another editor saved it): this world forgets the template it holds, so that the next instance reads the file. Instances already made are untouched.
+        virtual void DropPrefabTemplate(xecs::prefab::guid Prefab) noexcept = 0;
         // pOutside (optional): the references the group's members held to entities outside it (the prefab keeps them null; the instance the group becomes keeps them as overrides).
         // pMemberIds (optional): each source entity's id in the prefab (keyed by the source's entity value): what the instance the group becomes calls it.
         virtual xecs::prefab::guid CreatePrefabFromEntity(xecs::component::entity Source, xecs::prefab::guid Prefab, std::vector<xecs::prefab::outside_reference>* pOutside, std::unordered_map<std::uint64_t, std::uint64_t>* pMemberIds) noexcept = 0;
@@ -110,6 +115,8 @@ namespace xlioncore
         // from the instance's id and their address (xecs::editor::member_address), and the scene knows them (instance::m_InstanceMembers).
         // The template entity of a prefab at an address (what a member of an instance starts from); invalid when the prefab has no such member.
         virtual xecs::component::entity ResolvePrefabMember(xecs::prefab::guid Prefab, std::span<const std::uint64_t> Address) noexcept = 0;
+        // The same member as an instance of the prefab starts from it: the nested instances' recipes of the prefab applied (what "revert to the prefab's value" goes back to). Invalid when there is none.
+        virtual xecs::component::entity ResolveBakedPrefabMember(xecs::prefab::guid Prefab, std::span<const std::uint64_t> Address) noexcept = 0;
         // Every member address of a prefab (its own and its nested instances' members), the root's (empty) first.
         virtual void PrefabMemberAddresses(xecs::prefab::guid Prefab, std::vector<xecs::editor::member_address>& Out) noexcept = 0;
         // A new instance in the scene under Id (and under Parent when it is valid): its root and its members registered. Invalid when it could not be made.

@@ -27,6 +27,12 @@ namespace
             return World;
         }
         void DropPrefabTemplate(xecs::prefab::guid Prefab) noexcept override { if (m_Game.m_pGameMgr) m_Game.m_pGameMgr->m_PrefabMgr.DropTemplate(Prefab); }
+        int  LiveUpdatePrefab(xecs::prefab::guid Prefab, bool bFromFile) noexcept override
+        {
+            if (!m_Game.m_pGameMgr) return 0;
+            return xecs::prefab::recipe::LiveUpdate(m_Game.m_pGameMgr->m_SceneMgr, std::span<const xecs::prefab::guid>(&Prefab, 1), bFromFile);
+        }
+        bool PrefabUses(xecs::prefab::guid Prefab, xecs::prefab::guid Used) noexcept override { return m_Game.m_pGameMgr && xecs::prefab::recipe::Uses(*m_Game.m_pGameMgr, Prefab, Used); }
         void SetPrefabSaveRedirect(xecs::prefab::mgr::save_redirect* pRedirect) noexcept override
         {
             m_pPrefabRedirect = pRedirect;

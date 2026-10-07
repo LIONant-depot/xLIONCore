@@ -29,7 +29,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 12;       // 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
+        static constexpr std::uint32_t kVersion = 13;       // 13: LiveUpdatePrefab, PrefabUses (prefab plan phase 6); 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -101,6 +101,12 @@ namespace xlioncore
         virtual void SetPrefabSaveRedirect(xecs::prefab::mgr::save_redirect* pRedirect) noexcept = 0;
         // The prefab changed on disk (another editor saved it): this world forgets the template it holds, so that the next instance reads the file. Instances already made are untouched.
         virtual void DropPrefabTemplate(xecs::prefab::guid Prefab) noexcept = 0;
+        // Live update (documentation/Editors/prefabs_plan.md 3.6, phase 6): the instances in this world's scenes made of the prefab (it is theirs, or one they nest) are spawned again
+        // from it with their recipes - same ids, overrides kept, nothing written or marked dirty. bFromFile: the prefab changed on disk (the template is read again); otherwise the
+        // template in memory is the new one (the undo of an Apply). Never on a world that is playing. Returns how many instances were spawned again.
+        virtual int LiveUpdatePrefab(xecs::prefab::guid Prefab, bool bFromFile) noexcept = 0;
+        // True when an instance of Prefab is made of Used: it is Used, or nests it however deep (what a prefab cannot hold: itself).
+        virtual bool PrefabUses(xecs::prefab::guid Prefab, xecs::prefab::guid Used) noexcept = 0;
         // pOutside (optional): the references the group's members held to entities outside it (the prefab keeps them null; the instance the group becomes keeps them as overrides).
         // pMemberIds (optional): each source entity's id in the prefab (keyed by the source's entity value): what the instance the group becomes calls it.
         virtual xecs::prefab::guid CreatePrefabFromEntity(xecs::component::entity Source, xecs::prefab::guid Prefab, std::vector<xecs::prefab::outside_reference>* pOutside, std::unordered_map<std::uint64_t, std::uint64_t>* pMemberIds) noexcept = 0;

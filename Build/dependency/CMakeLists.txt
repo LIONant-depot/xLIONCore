@@ -62,6 +62,10 @@ target_include_directories(xLIONCore PRIVATE
   "${CMAKE_SOURCE_DIR}/plugins/xtexture.plugin/source"
 )
 target_compile_definitions(xLIONCore PRIVATE XECS_BUILD_SHARED XECS_EXPORTS XLIONCORE_BUILD_SHARED XLIONCORE_EXPORTS)
+# xlioncore_editor.cpp instantiates most of the engine's prefab/scene code (the prefab spawn of prefabs_plan.md phase 4 took it past the default section limit, C1128).
+if(MSVC)
+  target_compile_options(xLIONCore PRIVATE /bigobj)
+endif()
 # The resource system of the core (src/resources) makes textures on the device of the host: it needs xGPU, the same static library the renderer links.
 target_link_libraries(xLIONCore PRIVATE box3d::box3d xGPU)
 

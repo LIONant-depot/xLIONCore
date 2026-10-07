@@ -29,7 +29,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 10;
+        static constexpr std::uint32_t kVersion = 11;       // 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -96,7 +96,9 @@ namespace xlioncore
         virtual std::vector<xecs::scene::component_dependency> CollectSceneComponentDependencies(xecs::scene::guid Scene) noexcept = 0;
         virtual xerr EnsureLoadedPrefab(xecs::prefab::guid Prefab) noexcept = 0;
         virtual xerr SavePrefab(xecs::prefab::guid Prefab) noexcept = 0;
-        virtual xecs::prefab::guid CreatePrefabFromEntity(xecs::component::entity Source, xecs::prefab::guid Prefab) noexcept = 0;
+        // pOutside (optional): the references the group's members held to entities outside it (the prefab keeps them null; the instance the group becomes keeps them as overrides).
+        // pMemberIds (optional): each source entity's id in the prefab (keyed by the source's entity value): what the instance the group becomes calls it.
+        virtual xecs::prefab::guid CreatePrefabFromEntity(xecs::component::entity Source, xecs::prefab::guid Prefab, std::vector<xecs::prefab::outside_reference>* pOutside, std::unordered_map<std::uint64_t, std::uint64_t>* pMemberIds) noexcept = 0;
         virtual xecs::component::entity CreatePrefabInstance(xecs::component::entity PrefabEntity, bool bRemoveRoot) noexcept = 0;     // one instance of a resident prefab
         virtual void UpdateStructuralChanges() noexcept = 0;                               // the entities created/deleted/moved this frame take effect now (normally once a frame inside Run)
         virtual void EnableBuilders(bool bEnable) noexcept = 0;
@@ -104,10 +106,26 @@ namespace xlioncore
         // ---- the prefab and scene model on top of entities
         // A new entity with the same data components as Source (and a parent component when asked): their data copied, except the entity itself, the parent and the children (a children component starts empty).
         virtual xecs::component::entity CloneEntity(xecs::component::entity Source, bool bWithParent) noexcept = 0;
-        // The entity at a member path (child indices from Root) of a prefab or an instance of one; invalid when the path does not lead anywhere.
-        virtual xecs::component::entity ResolveMemberPath(xecs::component::entity Root, std::span<const std::uint32_t> Path) noexcept = 0;
+        // A prefab instance is a recipe (documentation/Editors/prefabs_plan.md, phase 3): its members are spawned from the prefab, with ids derived
+        // from the instance's id and their address (xecs::editor::member_address), and the scene knows them (instance::m_InstanceMembers).
+        // The template entity of a prefab at an address (what a member of an instance starts from); invalid when the prefab has no such member.
+        virtual xecs::component::entity ResolvePrefabMember(xecs::prefab::guid Prefab, std::span<const std::uint64_t> Address) noexcept = 0;
+        // Every member address of a prefab (its own and its nested instances' members), the root's (empty) first.
+        virtual void PrefabMemberAddresses(xecs::prefab::guid Prefab, std::vector<xecs::editor::member_address>& Out) noexcept = 0;
+        // A new instance in the scene under Id (and under Parent when it is valid): its root and its members registered. Invalid when it could not be made.
+        virtual xecs::component::entity InstantiatePrefabInScene(xecs::scene::instance& Scene, xecs::prefab::guid Prefab, xecs::scene::permanent_id Id, xecs::component::entity Parent) noexcept = 0;
+        // The instance's recipe refreshed from what its members are now (before it is cloned into a prefab, or its members are respawned).
+        virtual void RefreshPrefabRecipe(xecs::scene::instance& Scene, xecs::scene::permanent_id Root) noexcept = 0;
+        // The members the instance should have and does not (its recipe's removals aside) are spawned; how many.
+        virtual int SpawnMissingPrefabMembers(xecs::scene::instance& Scene, xecs::scene::permanent_id Root) noexcept = 0;
+        // Every entity of the scene whose parent's children list does not hold it joins that list (after entities were restored one by one).
+        virtual void LinkSceneChildren(xecs::scene::instance& Scene) noexcept = 0;
+        // The overrides of the instance on the entity itself (its members' need the scene: SpawnMissingPrefabMembers, a load).
         virtual void ApplyPrefabInstancePropertyOverrides(xecs::component::entity Entity) noexcept = 0;
-        virtual xerr ApplyInstanceOverridesToPrefab(xecs::component::entity PIRootEntity) noexcept = 0;
+        // The recipe's overrides on its live members (after members were restored one by one).
+        virtual void ApplyPrefabRecipeToMembers(xecs::scene::instance& Scene, xecs::scene::permanent_id Root) noexcept = 0;
+        // What the instance does differently becomes its prefab's, and the prefab is saved (Unity's Apply).
+        virtual xerr ApplyInstanceOverridesToPrefab(xecs::scene::instance& Scene, xecs::scene::permanent_id Root) noexcept = 0;
         virtual xerr LoadSceneEntity(xecs::scene::instance& Scene, xecs::scene::permanent_id Id) noexcept = 0;           // one entity of a scene, from its file (the undo of a delete)
         // The references to other entities of a loaded entity, resolved with what Resolve says for each encoded reference.
         virtual void RemapLoadedEntityReferences(xecs::component::entity Entity, const std::function<xecs::component::entity(std::int64_t)>& Resolve) noexcept = 0;

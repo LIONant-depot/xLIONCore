@@ -197,7 +197,7 @@ namespace
         std::vector<xecs::scene::component_dependency> CollectSceneComponentDependencies(xecs::scene::guid Scene) noexcept override { return W().m_SceneMgr.CollectSceneComponentDependencies(Scene); }
         xerr EnsureLoadedPrefab(xecs::prefab::guid Prefab) noexcept override { return W().m_PrefabMgr.EnsureLoaded(Prefab); }
         xerr SavePrefab(xecs::prefab::guid Prefab) noexcept override { return W().m_PrefabMgr.Save(Prefab); }
-        xecs::prefab::guid CreatePrefabFromEntity(xecs::component::entity Source, xecs::prefab::guid Prefab) noexcept override { return W().m_PrefabMgr.CreatePrefabFromEntity(Source, Prefab); }
+        xecs::prefab::guid CreatePrefabFromEntity(xecs::component::entity Source, xecs::prefab::guid Prefab, std::vector<xecs::prefab::outside_reference>* pOutside, std::unordered_map<std::uint64_t, std::uint64_t>* pMemberIds) noexcept override { return W().m_PrefabMgr.CreatePrefabFromEntity(Source, Prefab, pOutside, pMemberIds); }
         xecs::component::entity CreatePrefabInstance(xecs::component::entity PrefabEntity, bool bRemoveRoot) noexcept override { return W().m_PrefabMgr.CreatePrefabInstance(1, PrefabEntity, xecs::tools::empty_lambda{}, bRemoveRoot); }
         void UpdateStructuralChanges() noexcept override { if (m_Game.m_pGameMgr) W().m_ArchetypeMgr.UpdateStructuralChanges(); }
         void EnableBuilders(bool bEnable) noexcept override { if (m_Game.m_pGameMgr) W().EnableBuilders(bEnable); }
@@ -291,9 +291,35 @@ namespace
             }
             return NewEntity;
         }
-        xecs::component::entity ResolveMemberPath(xecs::component::entity Root, std::span<const std::uint32_t> Path) noexcept override { return xecs::persist::details::ResolveMemberPath(W(), Root, Path); }
+        xecs::component::entity ResolvePrefabMember(xecs::prefab::guid Prefab, std::span<const std::uint64_t> Address) noexcept override { return xecs::prefab::recipe::FindTemplate(W(), Prefab, Address); }
+        void PrefabMemberAddresses(xecs::prefab::guid Prefab, std::vector<xecs::editor::member_address>& Out) noexcept override
+        {
+            Out.clear();
+            xecs::prefab::recipe::plan Plan;
+            if (xecs::prefab::recipe::MakePlan(W(), Prefab, Plan)) return;
+            for (auto& N : Plan.m_Nodes) Out.push_back(N.m_Address);
+        }
+        xecs::component::entity InstantiatePrefabInScene(xecs::scene::instance& Scene, xecs::prefab::guid Prefab, xecs::scene::permanent_id Id, xecs::component::entity Parent) noexcept override
+        {
+            return xecs::prefab::recipe::InstantiateInScene(W(), Scene, Prefab, Id, Parent);
+        }
+        void RefreshPrefabRecipe(xecs::scene::instance& Scene, xecs::scene::permanent_id Root) noexcept override
+        {
+            xecs::prefab::recipe::RefreshRecipe(W(), Scene, Root, [&](xecs::component::entity Target, std::int64_t& Out) noexcept { return xecs::scene::details::ResolveReferenceInScene(W().m_SceneMgr, Scene, Target, Out); });
+        }
+        int SpawnMissingPrefabMembers(xecs::scene::instance& Scene, xecs::scene::permanent_id Root) noexcept override { return xecs::prefab::recipe::SpawnMissingMembers(W(), Scene, Root); }
+        void LinkSceneChildren(xecs::scene::instance& Scene) noexcept override { xecs::prefab::recipe::LinkChildren(W(), Scene); }
         void ApplyPrefabInstancePropertyOverrides(xecs::component::entity Entity) noexcept override { xecs::persist::details::ApplyPrefabInstancePropertyOverrides(W(), Entity); }
-        xerr ApplyInstanceOverridesToPrefab(xecs::component::entity PIRootEntity) noexcept override { return xecs::persist::details::ApplyInstanceOverridesToPrefab(W(), PIRootEntity); }
+        void ApplyPrefabRecipeToMembers(xecs::scene::instance& Scene, xecs::scene::permanent_id Root) noexcept override
+        {
+            auto It = Scene.m_LocalToRuntime.find(Root);
+            if (It == Scene.m_LocalToRuntime.end()) return;
+            const auto* pPI = xecs::prefab::recipe::details::LiveComponent<xecs::editor::prefab_instance>(W(), It->second);
+            if (pPI == nullptr || pPI->m_Format == 0) return;
+            const auto Recipe = *pPI;
+            xecs::prefab::recipe::ApplyLiveOverrides(W(), Recipe, [&](const xecs::editor::member_address& A) noexcept { return xecs::prefab::recipe::details::FindMember(Scene, Root, A); });
+        }
+        xerr ApplyInstanceOverridesToPrefab(xecs::scene::instance& Scene, xecs::scene::permanent_id Root) noexcept override { return xecs::prefab::recipe::ApplyToPrefab(W().m_SceneMgr, Scene, Root); }
         xerr LoadSceneEntity(xecs::scene::instance& Scene, xecs::scene::permanent_id Id) noexcept override { return xecs::scene::details::LoadEntity(W().m_SceneMgr, Scene, Id); }
         void RemapLoadedEntityReferences(xecs::component::entity Entity, const std::function<xecs::component::entity(std::int64_t)>& Resolve) noexcept override
         {

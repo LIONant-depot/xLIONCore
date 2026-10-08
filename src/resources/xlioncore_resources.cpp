@@ -4,7 +4,7 @@
 
 
 // What the plugins' loaders assume to be there when they are compiled (see LevelEditor_Main.cpp, which does the same for the editor): the manager, the GPU, the user data of the manager.
-#include "dependencies/xGPU/source/xgpu.h"
+#include "dependencies/xGPU/source/xGPU.h"
 #include "dependencies/xresource_mgr/source/xresource_mgr.h"
 
 struct resource_mgr_user_data

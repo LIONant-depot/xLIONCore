@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <cmath>
 
 namespace xlioncore::physics
 {
@@ -231,6 +233,22 @@ namespace xlioncore::physics
                 getGameMgr().SendGlobalEvent<contact_end_event>(Touch);
         }
 
+        static bool TraceEnabled(void) noexcept
+        {
+            static const bool s_bTrace = []
+            {
+#if defined(_MSC_VER)
+                char* p = nullptr; std::size_t n = 0;
+                const bool b = _dupenv_s(&p, &n, "XLION_PHYSICS_TRACE") == 0 && p && *p && *p != '0';
+                std::free(p);
+                return b;
+#else
+                const char* p = std::getenv("XLION_PHYSICS_TRACE");
+                return p && *p && *p != '0';
+#endif
+            }();
+            return s_bTrace;
+        }
         void OnUpdate(void) noexcept
         {
             static int s_Tick = 0;
@@ -387,6 +405,19 @@ namespace xlioncore::physics
                     , (yMin > 1e8f ? 0.f : yMin), (yMax < -1e8f ? 0.f : yMax), yFirstDyn, m_PendingDestroy.size()
                     );
                 std::fflush(stdout);
+                // XLION_PHYSICS_TRACE=1 (any value but 0): one more line per simulated body on the logged ticks - which body is where.
+                if (TraceEnabled())
+                {
+                    Foreach(S, [&]( const xecs::component::entity& Entity, const xlioncore::transform& T, const physics_body& Body ) noexcept
+                    {
+                        if (B3_IS_NULL(Body.m_BodyId)) return;
+                        const auto V = m_Backend.GetLinearVelocity(Body.m_BodyId);
+                        std::printf("[Physics]   body entity=0x%llX type=%d pos=(%.3f,%.3f,%.3f) velY=%.3f\n"
+                            , static_cast<unsigned long long>(Entity.m_Value), static_cast<int>(Body.m_CachedBodyType)
+                            , T.m_Position.m_X, T.m_Position.m_Y, T.m_Position.m_Z, V.m_Y );
+                    });
+                    std::fflush(stdout);
+                }
             }
         }
     };
@@ -464,9 +495,35 @@ namespace xlioncore::physics
                     S.m_HalfHeight = Size.m_HalfHeight;
                 }
 
+            // A shape with no extent along some axis (a 0 in the Transform's Scale or in the collider's own size) touches nothing: a dynamic body made only
+            // of such shapes falls through the ground forever (seen with a prefab whose root was saved with Scale 0,0,0). Such shapes are left out, and said
+            // so; a body left without shapes is not created at all (the same as no collider, below).
+            {
+                constexpr float kMinExtent = 1e-4f;
+                const auto IsDegenerate = [&]( const shape_params& S ) noexcept
+                {
+                    switch( S.m_Kind )
+                    {
+                    case shape_params::kind::BOX:      return !( (std::min)({ std::abs(S.m_HalfExtents.m_X), std::abs(S.m_HalfExtents.m_Y), std::abs(S.m_HalfExtents.m_Z) }) > kMinExtent );
+                    case shape_params::kind::SPHERE:   return !( S.m_Radius > kMinExtent );
+                    case shape_params::kind::CAPSULE:  return !( S.m_Radius > kMinExtent );
+                    case shape_params::kind::CYLINDER: return !( S.m_Radius > kMinExtent && S.m_HalfHeight > kMinExtent );
+                    default:                           return false;
+                    }
+                };
+                const auto nBefore = Shapes.size();
+                std::erase_if( Shapes, IsDegenerate );
+                if( const auto nDropped = nBefore - Shapes.size(); nDropped )
+                {
+                    std::printf("[Physics] WARNING: entity 0x%llX: %zu collider shape(s) have zero size (Transform Scale %.3f,%.3f,%.3f) - left out\n"
+                        , static_cast<unsigned long long>(Entity.m_Value), nDropped, T.m_Scale.m_X, T.m_Scale.m_Y, T.m_Scale.m_Z );
+                    std::fflush(stdout);
+                }
+            }
+
             if( Shapes.empty() )
             {
-                std::printf("[Physics] WARNING: entity 0x%llX has PhysicsBodyProperties but no collider - no body created\n", static_cast<unsigned long long>(Entity.m_Value));
+                std::printf("[Physics] WARNING: entity 0x%llX has PhysicsBodyProperties but no usable collider - no body created\n", static_cast<unsigned long long>(Entity.m_Value));
                 std::fflush(stdout);
                 return;
             }

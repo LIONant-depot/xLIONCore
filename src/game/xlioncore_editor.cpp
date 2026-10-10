@@ -61,16 +61,12 @@ namespace
             return &Details.m_pPool->getComponent<T>(Details.m_PoolIndex);
         }
 
-        // Does this world have the entity? The handle names a slot of the world with the stamp it had when the handle was made, and the slot must still hold it (a pool). A handle that is out of step with
-        // the world - a scene's map that outlived the world it came from (a reload whose snapshot was not read to its end) - is simply "not alive": getEntityDetails would assert on it in the Debug build
-        // and read memory that is not there in the Release one, so the slot is read here, checked.
+        // Does this world have the entity? The ECS answers it with its own check (global_info_mgr::isEntityValid): the handle must name a slot that exists (an index past the slots is false: a handle
+        // from a bigger, older world - a scene's map that outlived a reload - would otherwise read past the table, which only crashes in a Release build), the stamp must still match and the slot
+        // must hold a pool. It never asserts, which getEntityDetails does in the Debug build for exactly these handles.
         bool IsAlive(xecs::component::entity Entity) noexcept override
         {
-            if (!m_Game.m_pGameMgr || !Entity.isValid()) return false;
-            auto& Infos = m_Game.m_pGameMgr->m_ComponentMgr.m_GlobalEntityInfos;
-            if (Infos.m_pGlobalInfo == nullptr) return false;
-            const auto& Entry = Infos.m_pGlobalInfo[Entity.m_GlobalInfoIndex];
-            return Entry.m_Validation == Entity.m_Validation && Entry.m_pPool != nullptr;   // a slot with no pool is an entity a snapshot named (its stamp is restored first) and then never read back
+            return m_Game.m_pGameMgr && m_Game.m_pGameMgr->m_ComponentMgr.isEntityValid(Entity);
         }
 
         void* ResolveComponent(xecs::component::entity Entity, xecs::component::type::guid Type, const xecs::component::type::info*& pInfo) noexcept override

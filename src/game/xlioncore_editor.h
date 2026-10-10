@@ -29,7 +29,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 14;       // 14: IsAlive reads the slot of the handle checked (stamp and pool, no assert): the editor's world check relies on it, an older core would assert or read a stale slot; 13: LiveUpdatePrefab, PrefabUses (prefab plan phase 6); 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
+        static constexpr std::uint32_t kVersion = 15;       // 15: IsAlive is bounded (a handle past the slots is not alive: 14 read past the table); 14: IsAlive checks the stamp and the pool without asserting (the editor's world check relies on it: an older core would assert or read a stale slot); 13: LiveUpdatePrefab, PrefabUses (prefab plan phase 6); 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
 
         virtual std::uint32_t Version() const noexcept = 0;
 

@@ -1,5 +1,5 @@
 // The resource system of the core (see xlioncore_resources_api.h): the resource manager of this copy of LIONCore.dll, with the loaders of the resource types the engine uses itself. Today:
-// Font (and the Texture its atlas is). The loaders are the plugins' own - compiled in here, the same way the editor folds them into its own translation unit - so a compiled resource is
+// Font (and the Texture its atlas is), GeomStatic, Material, MaterialInstance. The loaders are the plugins' own - compiled in here, the same way the editor folds them into its own translation unit - so a compiled resource is
 // read by the one code that wrote it.
 
 
@@ -16,6 +16,12 @@ struct resource_mgr_user_data
 #include "plugins/xtexture.plugin/source/xtexture_xgpu_rsc_loader.cpp"
 #include "plugins/xfont.plugin/source/xfont_xgpu_rsc_loader.h"
 #include "plugins/xfont.plugin/source/xfont_xgpu_rsc_loader.cpp"
+#include "plugins/xmaterial.plugin/source/xmaterial_xgpu_rsc_loader.h"
+#include "plugins/xmaterial.plugin/source/xmaterial_xgpu_rsc_loader.cpp"
+#include "plugins/xmaterial_instance.plugin/source/xmaterial_instance_xgpu_rsc_loader.h"
+#include "plugins/xmaterial_instance.plugin/source/xmaterial_instance_xgpu_rsc_loader.cpp"
+#include "plugins/xgeom_static.plugin/source/xgeom_static_xgpu_rsc_loader.h"
+#include "plugins/xgeom_static.plugin/source/xgeom_static_xgpu_rsc_loader.cpp"
 
 #include "xlioncore_resources_api.h"
 
@@ -40,6 +46,15 @@ namespace xlioncore::resources
         resource_mgr_user_data                          s_UserData;
         bool                                            s_bReady = false;
         std::unordered_map<std::uint64_t, loaded_font>  s_Fonts;
+
+        struct loaded_resource
+        {
+            xresource::full_guid                    m_Ref{};
+            void*                                   m_pData     = nullptr;
+            std::chrono::steady_clock::time_point   m_NextTry{};
+        };
+        struct pair_hash { std::size_t operator()(const std::pair<std::uint64_t, std::uint64_t>& P) const noexcept { return std::hash<std::uint64_t>{}(P.first * 0x9E3779B97F4A7C15ull ^ P.second); } };
+        std::unordered_map<std::pair<std::uint64_t, std::uint64_t>, loaded_resource, pair_hash> s_Resources;
     }
 
     void Initialize(xgpu::device& Device, const wchar_t* pProjectPath) noexcept
@@ -82,9 +97,34 @@ namespace xlioncore::resources
         return true;
     }
 
+    void* GetResource(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept
+    {
+        std::lock_guard Lock(s_Mutex);
+        if (!s_bReady || Instance == 0) return nullptr;
+        if ((Instance & 1) == 0) return reinterpret_cast<void*>(Instance);          // already a pointer to the loaded resource
+
+        auto& Entry = s_Resources[{ TypeGuid, Instance }];
+        if (Entry.m_pData) return Entry.m_pData;
+        const auto Now = std::chrono::steady_clock::now();
+        if (Now < Entry.m_NextTry) return nullptr;
+
+        Entry.m_Ref.m_Instance = xresource::instance_guid{ Instance };
+        Entry.m_Ref.m_Type     = xresource::type_guid{ TypeGuid };
+        Entry.m_pData          = xresource::g_Mgr.getResource(Entry.m_Ref);
+        if (!Entry.m_pData)
+        {
+            Entry.m_Ref.m_Instance = xresource::instance_guid{ Instance };        // not loaded: the reference stays a guid, asked again in a second
+            Entry.m_NextTry        = Now + std::chrono::seconds(1);
+        }
+        return Entry.m_pData;
+    }
+
     void Shutdown() noexcept
     {
         std::lock_guard Lock(s_Mutex);
+        for (auto& [Key, Entry] : s_Resources)
+            if (Entry.m_pData) xresource::g_Mgr.ReleaseRef(Entry.m_Ref);
+        s_Resources.clear();
         for (auto& [Instance, Entry] : s_Fonts)
             if (Entry.m_bRequested) xresource::g_Mgr.ReleaseRef(Entry.m_Ref);
         s_Fonts.clear();

@@ -40,6 +40,11 @@ namespace xlioncore::resources
     // The font with this instance guid (the instance part of a font reference), loaded the first time it is asked for. False while it cannot be had.
     XLIONCORE_API bool GetFont(std::uint64_t FontInstance, font_view& Out) noexcept;
 
+    // A loaded resource of the types the engine draws with, as the pointer of the plugin's runtime struct: GeomStatic (xgeom_static::xgpu::geom), Material (xmaterial::rt),
+    // MaterialInstance (xmaterial_instance::rt), Texture (xgpu::texture). Loaded the first time it is asked for; null while it cannot be had (not compiled yet: asked again after a
+    // second). Instance: the instance part of a reference (odd), or an already loaded pointer (even: returned as it is - what a loaded resource's own references become).
+    XLIONCORE_API void* GetResource(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept;
+
     // Lets go of everything that was loaded.
     XLIONCORE_API void Shutdown() noexcept;
 }

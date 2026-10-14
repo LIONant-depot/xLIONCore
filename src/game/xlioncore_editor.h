@@ -29,7 +29,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 15;       // 15: IsAlive is bounded (a handle past the slots is not alive: 14 read past the table); 14: IsAlive checks the stamp and the pool without asserting (the editor's world check relies on it: an older core would assert or read a stale slot); 13: LiveUpdatePrefab, PrefabUses (prefab plan phase 6); 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
+        static constexpr std::uint32_t kVersion = 16;       // 16: MarkResourceUpdated (a resource compiled again reaches this copy's resource manager); 15: IsAlive is bounded (a handle past the slots is not alive: 14 read past the table); 14: IsAlive checks the stamp and the pool without asserting (the editor's world check relies on it: an older core would assert or read a stale slot); 13: LiveUpdatePrefab, PrefabUses (prefab plan phase 6); 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -160,6 +160,11 @@ namespace xlioncore
 
         // ---- physics
         virtual bool TeleportDynamicBody(xecs::component::entity Entity, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept = 0;
+
+        // ---- resources
+        // The resource was compiled again (the editor, after a compile): this copy's resources move to the new data (xlioncore::resources::MarkUpdated:
+        // every copy of the core has its own resource manager, the editor's call reaches only its own)
+        virtual void MarkResourceUpdated(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept = 0;
     };
 
     // The guid of a component type: a compile-time constant of the type, the same in every binary (the bit id is what is per binary, and is never needed outside the core).

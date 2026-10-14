@@ -45,6 +45,7 @@ namespace xlioncore::resources
         std::mutex                                      s_Mutex;
         resource_mgr_user_data                          s_UserData;
         bool                                            s_bReady = false;
+        std::uint32_t                                   s_UpdateCount = 0;     // MarkUpdated calls (UpdateCount)
         std::unordered_map<std::uint64_t, loaded_font>  s_Fonts;
 
         struct loaded_resource
@@ -101,10 +102,22 @@ namespace xlioncore::resources
     {
         std::lock_guard Lock(s_Mutex);
         if (!s_bReady || Instance == 0) return nullptr;
-        if ((Instance & 1) == 0) return reinterpret_cast<void*>(Instance);          // already a pointer to the loaded resource
+        if ((Instance & 1) == 0)                                                    // already a pointer to the loaded resource (a loaded resource's own references)...
+        {
+            xresource::full_guid Ref;
+            Ref.m_Instance.m_Pointer = reinterpret_cast<void*>(Instance);
+            Ref.m_Type               = xresource::type_guid{ TypeGuid };
+            if (!xresource::g_Mgr.isStale(Ref)) return reinterpret_cast<void*>(Instance);
+            Instance = xresource::g_Mgr.getFullGuid(Ref).m_Instance.m_Value;        // ... unless compiled again since (MarkUpdated): the new one, by its guid
+        }
 
         auto& Entry = s_Resources[{ TypeGuid, Instance }];
-        if (Entry.m_pData) return Entry.m_pData;
+        if (Entry.m_pData)
+        {
+            if (!xresource::g_Mgr.isStale(Entry.m_Ref)) return Entry.m_pData;
+            if (void* pNew = xresource::g_Mgr.getResource(Entry.m_Ref)) Entry.m_pData = pNew;      // compiled again (MarkUpdated): the reference moves to the new one
+            return Entry.m_pData;
+        }
         const auto Now = std::chrono::steady_clock::now();
         if (Now < Entry.m_NextTry) return nullptr;
 
@@ -117,6 +130,23 @@ namespace xlioncore::resources
             Entry.m_NextTry        = Now + std::chrono::seconds(1);
         }
         return Entry.m_pData;
+    }
+
+    void MarkUpdated(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept
+    {
+        std::lock_guard Lock(s_Mutex);
+        if (!s_bReady || (Instance & 1) == 0) return;
+        xresource::full_guid Guid;
+        Guid.m_Instance = xresource::instance_guid{ Instance };
+        Guid.m_Type     = xresource::type_guid{ TypeGuid };
+        xresource::g_Mgr.MarkUpdated(Guid);
+        ++s_UpdateCount;
+    }
+
+    std::uint32_t UpdateCount() noexcept
+    {
+        std::lock_guard Lock(s_Mutex);
+        return s_UpdateCount;
     }
 
     void Shutdown() noexcept

@@ -1,6 +1,7 @@
 // The editor interface of this copy of the core (see xlioncore_editor.h): compiled into LIONCore.dll, so everything it does runs against THIS copy's registry.
 #include "xlioncore_editor.h"
 #include "../physics/xlioncore_physics_api.h"
+#include "../resources/xlioncore_resources_api.h"
 
 // The entry points of this module that register what it defines (xlioncore_plugin_entry.cpp): the editor calls them through the interface, so the types land in THIS copy's registry.
 extern "C" void XecsPlugin_RegisterComponents(xecs::game_mgr::instance& GameMgr, xecs::plugin::token Token) noexcept;
@@ -363,6 +364,8 @@ namespace
         {
             return m_Game.m_pGameMgr && xlioncore::physics::TeleportDynamicBody(*m_Game.m_pGameMgr, Entity, Position, Rotation);
         }
+
+        void MarkResourceUpdated(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept override { xlioncore::resources::MarkUpdated(TypeGuid, Instance); }
     };
 }
 

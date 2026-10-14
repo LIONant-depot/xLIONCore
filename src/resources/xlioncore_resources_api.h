@@ -45,6 +45,13 @@ namespace xlioncore::resources
     // second). Instance: the instance part of a reference (odd), or an already loaded pointer (even: returned as it is - what a loaded resource's own references become).
     XLIONCORE_API void* GetResource(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept;
 
+    // The resource was compiled again (the editor, after a compile): what is loaded of it is old. GetResource gives the new one from now on (the old one
+    // goes when nothing holds it); what was made from the old one has to be made again - UpdateCount tells a cache when to look.
+    XLIONCORE_API void MarkUpdated(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept;
+
+    // How many times MarkUpdated ran: a cache of things made from resources (a renderer's materials) checks them again when it changes.
+    XLIONCORE_API std::uint32_t UpdateCount() noexcept;
+
     // Lets go of everything that was loaded.
     XLIONCORE_API void Shutdown() noexcept;
 }

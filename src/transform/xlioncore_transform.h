@@ -52,8 +52,7 @@ namespace xlioncore
         // With m_EditorLockScale on, editing one axis scales the other two by the same ratio (proportional).
         inline void             setScaleAxis        (float& Axis, const float New)      noexcept
         {
-            if (m_EditorLockScale && Axis != 0.0f) m_Scale *= New / Axis;   // ponytail: old axis 0 has no ratio, falls to plain set
-            else                                   Axis = New;
+            xmath::SetScaleAxis(m_Scale, Axis, New, m_EditorLockScale);    // the lock every scale-like property shares (old axis 0 has no ratio: a plain set)
             MarkDirtyToPhysics();
         }
         inline void             setScaleX           (const float X)                     noexcept { setScaleAxis(m_Scale.m_X, X); }

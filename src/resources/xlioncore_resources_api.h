@@ -49,6 +49,10 @@ namespace xlioncore::resources
     // goes when nothing holds it); what was made from the old one has to be made again - UpdateCount tells a cache when to look.
     XLIONCORE_API void MarkUpdated(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept;
 
+    // The instance guid of a reference: Instance itself when it is one (odd), the guid of the loaded resource when it is a pointer (even: what a loaded resource's own
+    // references become). 0 when the pointer is not a resource of TypeGuid that is known.
+    XLIONCORE_API std::uint64_t GuidOf(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept;
+
     // How many times MarkUpdated ran: a cache of things made from resources (a renderer's materials) checks them again when it changes.
     XLIONCORE_API std::uint32_t UpdateCount() noexcept;
 

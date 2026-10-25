@@ -143,6 +143,17 @@ namespace xlioncore::resources
         ++s_UpdateCount;
     }
 
+    std::uint64_t GuidOf(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept
+    {
+        if (Instance == 0 || (Instance & 1) == 1) return Instance;
+        std::lock_guard Lock(s_Mutex);
+        if (!s_bReady) return 0;
+        xresource::full_guid Ref;
+        Ref.m_Instance.m_Pointer = reinterpret_cast<void*>(Instance);
+        Ref.m_Type               = xresource::type_guid{ TypeGuid };
+        return xresource::g_Mgr.getFullGuid(Ref).m_Instance.m_Value;
+    }
+
     std::uint32_t UpdateCount() noexcept
     {
         std::lock_guard Lock(s_Mutex);

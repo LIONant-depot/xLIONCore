@@ -1,5 +1,5 @@
 // The resource system of the core (see xlioncore_resources_api.h): the resource manager of this copy of LIONCore.dll, with the loaders of the resource types the engine uses itself. Today:
-// Font (and the Texture its atlas is), GeomStatic, Material, MaterialInstance. The loaders are the plugins' own - compiled in here, the same way the editor folds them into its own translation unit - so a compiled resource is
+// Font (and the Texture its atlas is), GeomStatic, Material, MaterialInstance, GeomSkin, xSkeleton, xAnimPackage. The loaders are the plugins' own - compiled in here, the same way the editor folds them into its own translation unit - so a compiled resource is
 // read by the one code that wrote it.
 
 
@@ -22,6 +22,12 @@ struct resource_mgr_user_data
 #include "plugins/xmaterial_instance.plugin/source/xmaterial_instance_xgpu_rsc_loader.cpp"
 #include "plugins/xgeom_static.plugin/source/xgeom_static_xgpu_rsc_loader.h"
 #include "plugins/xgeom_static.plugin/source/xgeom_static_xgpu_rsc_loader.cpp"
+#include "plugins/xskeleton.plugin/source/xskeleton_xgpu_rsc_loader.h"            // the Skinned Mesh and the Animation (xlionrender_scene_components.h)
+#include "plugins/xskeleton.plugin/source/xskeleton_xgpu_rsc_loader.cpp"
+#include "plugins/xanim_package.plugin/source/xanim_package_xgpu_rsc_loader.h"
+#include "plugins/xanim_package.plugin/source/xanim_package_xgpu_rsc_loader.cpp"
+#include "plugins/xgeom_skin.plugin/source/xgeom_skin_xgpu_rsc_loader.h"
+#include "plugins/xgeom_skin.plugin/source/xgeom_skin_xgpu_rsc_loader.cpp"
 
 #include "xlioncore_resources_api.h"
 

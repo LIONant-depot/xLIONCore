@@ -13,7 +13,7 @@ set(BOX3D_SAMPLES OFF CACHE BOOL "" FORCE)
 set(BOX3D_UNIT_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(box3d
   GIT_REPOSITORY https://github.com/erincatto/box3d.git
-  GIT_TAG main
+  GIT_TAG f36d061ba26998c87cb7dc593a4065aaa03fb7eb     # pinned (f36d061, 'CMake improvements'): main moved under a configured tree - a fresh configure fetched 3362633's new joints and the tree's box3d project, made before, did not list them (LNK2019, 2026-10-28)
   SOURCE_DIR "${CMAKE_SOURCE_DIR}/dependencies/box3d"
 )
 FetchContent_MakeAvailable(box3d)

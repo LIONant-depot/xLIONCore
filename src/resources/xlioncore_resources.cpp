@@ -51,7 +51,6 @@ namespace xlioncore::resources
         std::mutex                                      s_Mutex;
         resource_mgr_user_data                          s_UserData;
         bool                                            s_bReady = false;
-        std::uint32_t                                   s_UpdateCount = 0;     // MarkUpdated calls (UpdateCount)
         std::unordered_map<std::uint64_t, loaded_font>  s_Fonts;
 
         struct loaded_resource
@@ -108,6 +107,7 @@ namespace xlioncore::resources
     {
         std::lock_guard Lock(s_Mutex);
         if (!s_bReady || Instance == 0) return nullptr;
+        xresource::g_Mgr.ApplyReplacements();                                      // finished background loads take over (a texture's big mips): references below move to them
         if ((Instance & 1) == 0)                                                    // already a pointer to the loaded resource (a loaded resource's own references)...
         {
             xresource::full_guid Ref;
@@ -146,7 +146,6 @@ namespace xlioncore::resources
         Guid.m_Instance = xresource::instance_guid{ Instance };
         Guid.m_Type     = xresource::type_guid{ TypeGuid };
         xresource::g_Mgr.MarkUpdated(Guid);
-        ++s_UpdateCount;
     }
 
     std::uint64_t GuidOf(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept
@@ -163,7 +162,7 @@ namespace xlioncore::resources
     std::uint32_t UpdateCount() noexcept
     {
         std::lock_guard Lock(s_Mutex);
-        return s_UpdateCount;
+        return xresource::g_Mgr.getUpdateCount();     // MarkUpdated, and a texture's big mips taking over from its tail (QueueReplace)
     }
 
     void Shutdown() noexcept

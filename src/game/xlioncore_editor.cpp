@@ -4,6 +4,7 @@
 #include "../resources/xlioncore_resources_api.h"
 
 // The entry points of this module that register what it defines (xlioncore_plugin_entry.cpp): the editor calls them through the interface, so the types land in THIS copy's registry.
+#include "dependencies/xscheduler/source/xscheduler.h"     // (XLionCore_BeforeUnload: this module's scheduler)
 extern "C" void XecsPlugin_RegisterComponents(xecs::game_mgr::instance& GameMgr, xecs::plugin::token Token) noexcept;
 extern "C" void XecsPlugin_RegisterSystems(xecs::game_mgr::instance& GameMgr) noexcept;
 
@@ -372,4 +373,12 @@ namespace
 extern "C" __declspec(dllexport) xlioncore::xECSEditor* XLionCore_CreateEditor() noexcept
 {
     return new editor_impl;
+}
+
+// Before a copy of this DLL is unloaded (a Level closing - xlevel_engine_copies.h): its own scheduler's workers stop (the texture loads
+// start it). Each worker thread holds a reference to the module its code is in (the C runtime's thread start): while they run the copy
+// never unloads, 2026-11-01
+extern "C" __declspec(dllexport) void XLionCore_BeforeUnload() noexcept
+{
+    if (auto& S = xscheduler::g_System; S.getWorkerCount()) S.Shutdown();
 }

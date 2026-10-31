@@ -377,8 +377,10 @@ extern "C" __declspec(dllexport) xlioncore::xECSEditor* XLionCore_CreateEditor()
 
 // Before a copy of this DLL is unloaded (a Level closing - xlevel_engine_copies.h): its own scheduler's workers stop (the texture loads
 // start it). Each worker thread holds a reference to the module its code is in (the C runtime's thread start): while they run the copy
-// never unloads, 2026-11-01
+// never unloads, 2026-11-01. Then the resources it loaded let go (its own resource manager's references): their GPU memory is on the
+// editor's device, which outlives the copy - every closed Level left all of it allocated (the profiler's memory map, 2026-11-01)
 extern "C" __declspec(dllexport) void XLionCore_BeforeUnload() noexcept
 {
     if (auto& S = xscheduler::g_System; S.getWorkerCount()) S.Shutdown();
+    xlioncore::resources::Shutdown();
 }

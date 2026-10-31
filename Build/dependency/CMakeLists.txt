@@ -3,6 +3,7 @@
 # Defensive - FetchAndPopulate is idempotent, a no-op if the host project already fetched this (xLION's
 # own top-level CMakeLists.txt already does).
 FetchAndPopulate("https://github.com/LIONant-depot/xECSV2.git" "main")
+FetchAndPopulate("https://github.com/LIONant-depot/xprofile.git" "main")      # the profiler (xprofile.dll: one client for every module and Level copy)
 
 # box3d (Erin Catto's 3D physics engine) - a real, non-LIONant CMake project (ships its own
 # add_subdirectory(src) with a box3d::box3d target), so this uses plain FetchContent directly rather
@@ -67,7 +68,7 @@ if(MSVC)
   target_compile_options(xLIONCore PRIVATE /bigobj)
 endif()
 # The resource system of the core (src/resources) makes textures on the device of the host: it needs xGPU, the same static library the renderer links.
-target_link_libraries(xLIONCore PRIVATE box3d::box3d xGPU)
+target_link_libraries(xLIONCore PRIVATE box3d::box3d xGPU xprofile)
 
 # ... and what its loaders read the compiled resources with: the sources of these components (registered by their own depots, see xcmake_tools' DefineInterfaceComponent) are compiled
 # into this DLL, the way every binary that needs them compiles its own copy (nothing of them is exported).

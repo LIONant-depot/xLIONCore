@@ -45,6 +45,16 @@ namespace xlioncore::physics
     XLIONCORE_API void PoseRagdoll( const ragdoll& Ragdoll, const xanimation::skeleton_view& Skel, float Alpha, std::span<const xanimation::rigid> Animated, std::span<xanimation::rigid> Out ) noexcept;
     XLIONCORE_API void RagdollStats( const ragdoll& Ragdoll, ragdoll_stats& Out ) noexcept;
     XLIONCORE_API xanimation::rigid RagdollRootBody( const ragdoll& Ragdoll, float Alpha ) noexcept;      // the root body's (the hips') world frame
+
+    // A world of its own, outside any game (the Ragdoll editor's Drop, R5): gravity, a floor (its top at FloorY) and the ragdolls activated
+    // in it. The SAME activation, sub-steps and capture as the game's world: one path for the editor and Play. Destroy frees its ragdolls.
+    struct ragdoll_world;     // opaque
+    XLIONCORE_API ragdoll_world* CreateRagdollWorld( float FloorY, float Gravity = 9.81f ) noexcept;
+    XLIONCORE_API void           DestroyRagdollWorld( ragdoll_world* pWorld ) noexcept;
+    XLIONCORE_API ragdoll*       ActivateRagdoll( ragdoll_world& World, const xanimation::body_graph& Graph
+                                                , std::span<const xanimation::rigid> RestModel, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur
+                                                , float Dt, std::span<const std::pair<int, int>> Filter, const ragdoll_params& Params, std::string* pNote ) noexcept;
+    XLIONCORE_API void           StepRagdollWorld( ragdoll_world& World, float Dt ) noexcept;     // one fixed step (the ragdolls' sub-steps), then every ragdoll captured
 }
 
 #endif

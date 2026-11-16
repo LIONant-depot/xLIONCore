@@ -160,4 +160,56 @@ namespace xlioncore::physics
         const float t = std::clamp(Alpha, 0.0f, 1.0f);
         return { A.m_P + (B.m_P - A.m_P) * t, xmath::fquat::SlerpAccurate(A.m_Q, B.m_Q, t).NormalizeSafeCopy() };
     }
+
+    // The editor's world (R5 Drop): a Box3D world with a floor, its ragdolls made and captured exactly as the game's (ActivateRagdoll above)
+    struct ragdoll_world
+    {
+        b3WorldId                               m_World;
+        std::vector<std::unique_ptr<ragdoll>>   m_Ragdolls;
+    };
+
+    ragdoll_world* CreateRagdollWorld( float FloorY, float Gravity ) noexcept
+    {
+        auto p = new ragdoll_world;
+        b3WorldDef WD = b3DefaultWorldDef(); WD.gravity = { 0, -Gravity, 0 };
+        p->m_World = b3CreateWorld(&WD);
+        b3BodyDef FD = b3DefaultBodyDef(); FD.position = { 0, FloorY - 0.5f, 0 };
+        const b3BodyId Floor = b3CreateBody(p->m_World, &FD);
+        b3ShapeDef SD = b3DefaultShapeDef(); const auto Box = b3MakeBoxHull(500, 0.5f, 500);
+        b3CreateHullShape(Floor, &SD, &Box.base);
+        return p;
+    }
+
+    void DestroyRagdollWorld( ragdoll_world* pWorld ) noexcept
+    {
+        if (!pWorld) return;
+        for (auto& p : pWorld->m_Ragdolls) xanimation::DeactivateRagdoll(p->m_Runtime);
+        b3DestroyWorld(pWorld->m_World);
+        delete pWorld;
+    }
+
+    ragdoll* ActivateRagdoll( ragdoll_world& World, const xanimation::body_graph& Graph
+                            , std::span<const xanimation::rigid> RestModel, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur
+                            , float Dt, std::span<const std::pair<int, int>> Filter, const ragdoll_params& Params, std::string* pNote ) noexcept
+    {
+        if (Dt <= 0) return nullptr;
+        auto p = std::make_unique<ragdoll>();
+        p->m_Graph = Graph;
+        p->m_SubSteps = std::max(1, Params.m_SubSteps);
+        xanimation::ragdoll_runtime_settings Set;
+        Set.m_Box.m_PassiveStiffness = Params.m_PassiveStiffness; Set.m_Box.m_FrictionFactor = Params.m_FrictionFactor; Set.m_Box.m_JointHertz = Params.m_JointHertz;
+        Set.m_Size = Params.m_Size;
+        p->m_Runtime = xanimation::ActivateRagdoll(World.m_World, p->m_Graph, RestModel, BonePrev, BoneCur, Dt, Filter, Set);
+        if (pNote) *pNote = p->m_Runtime.m_Note;
+        World.m_Ragdolls.push_back(std::move(p));
+        return World.m_Ragdolls.back().get();
+    }
+
+    void StepRagdollWorld( ragdoll_world& World, float Dt ) noexcept
+    {
+        int n = 4;      // the game world's rule (system::UpdateSubSteps): max(4, the active ragdolls' sub-steps)
+        for (const auto& p : World.m_Ragdolls) n = std::max(n, p->m_SubSteps);
+        b3World_Step(World.m_World, Dt, n);
+        for (auto& p : World.m_Ragdolls) xanimation::CaptureRagdoll(p->m_Runtime);
+    }
 }

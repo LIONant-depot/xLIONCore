@@ -147,7 +147,7 @@ namespace xlioncore::physics
             const xmath::fvec3 IW(I.cx.x * Wl.m_X + I.cy.x * Wl.m_Y + I.cz.x * Wl.m_Z, I.cx.y * Wl.m_X + I.cy.y * Wl.m_Y + I.cz.y * Wl.m_Z, I.cx.z * Wl.m_X + I.cy.z * Wl.m_Y + I.cz.z * Wl.m_Z);
             Out.m_KE += 0.5f * D.mass * V.Dot(V) + 0.5f * Wl.Dot(IW);
             Out.m_Mass += D.mass; MY += double(D.mass) * double(b3Body_GetWorldCenter(Id).y);
-            Out.m_MaxSpeed = std::max(Out.m_MaxSpeed, V.Length());
+            if (V.Length() > Out.m_MaxSpeed) { Out.m_MaxSpeed = V.Length(); Out.m_iFastest = Out.m_nBodies; }
             Out.m_nAwake += b3Body_IsAwake(Id) ? 1 : 0; ++Out.m_nBodies;
         }
         Out.m_ComY = Out.m_Mass > 0 ? float(MY / Out.m_Mass) : 0.0f;

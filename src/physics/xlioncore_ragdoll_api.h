@@ -32,6 +32,7 @@ namespace xlioncore::physics
         float   m_KE = 0, m_Mass = 0, m_ComY = 0;
         float   m_MaxSpeed = 0;                 // m/s, the fastest body's centre
         int     m_nAwake = 0, m_nBodies = 0;
+        int     m_iFastest = -1;                // the body of m_MaxSpeed
     };
 
     // Bodies at BoneCur with the motion between BonePrev and BoneCur (Dt apart): world rigid bone frames (xanimation::RigidBoneWorlds);

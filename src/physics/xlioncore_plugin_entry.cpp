@@ -80,6 +80,22 @@ void XScript_GetComponentDisplayInfo(xscript::pfn_component_display_visitor pVis
 
 namespace xlioncore::physics
 {
+    ray_hit CastRayClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const xmath::fvec3& Translation ) noexcept
+    {
+        ray_hit Out;
+        auto* pGame   = game::From(GameMgr);
+        auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
+        if (!pSystem) return Out;
+        const auto R = b3World_CastRayClosest(pSystem->m_Backend.World(), b3Pos{ Origin.m_X, Origin.m_Y, Origin.m_Z }, b3Vec3{ Translation.m_X, Translation.m_Y, Translation.m_Z }, b3DefaultQueryFilter());
+        if (!R.hit) return Out;
+        Out.m_bHit = true;
+        Out.m_Point = xmath::fvec3(float(R.point.x), float(R.point.y), float(R.point.z));
+        Out.m_Normal = xmath::fvec3(R.normal.x, R.normal.y, R.normal.z);
+        Out.m_Fraction = R.fraction;
+        Out.m_Entity = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b3Body_GetUserData(b3Shape_GetBody(R.shapeId))));
+        return Out;
+    }
+
     bool TeleportDynamicBody
     ( xecs::game_mgr::instance&  GameMgr
     , xecs::component::entity    Entity

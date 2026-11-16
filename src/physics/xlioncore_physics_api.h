@@ -37,6 +37,22 @@ namespace xlioncore::physics
     , const xmath::fvec3&        Position
     , const xmath::fquat&        Rotation
     ) noexcept;
+
+    // What a ray hit (plan 13.2): the world point and the surface normal there, the fraction of the ray, the entity whose body owns the
+    // shape (0: a body without one)
+    struct ray_hit
+    {
+        bool            m_bHit      = false;
+        xmath::fvec3    m_Point     {};
+        xmath::fvec3    m_Normal    {0, 1, 0};
+        float           m_Fraction  = 1;
+        std::uint64_t   m_Entity    = 0;
+    };
+
+    // The closest shape a ray from Origin along Translation (its length is the reach) hits in the game's physics world (Box3D
+    // b3World_CastRayClosest, the default filter; sensors and back faces are skipped). No game physics or nothing hit: m_bHit false.
+    // The feet's ground casts (K3) and any game query.
+    XLIONCORE_API ray_hit CastRayClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const xmath::fvec3& Translation ) noexcept;
 }
 
 #endif // XLIONCORE_PHYSICS_API_H

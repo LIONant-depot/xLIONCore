@@ -124,7 +124,7 @@ namespace xlioncore::physics
         auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
         if (!pSystem || !pRagdoll) return;
         auto& V = pSystem->m_Ragdolls;
-        for (auto It = V.begin(); It != V.end(); ++It) if (It->get() == pRagdoll) { xanimation::DeactivateRagdoll((*It)->m_Runtime); V.erase(It); break; }
+        for (auto It = V.begin(); It != V.end(); ++It) if (It->get() == pRagdoll) { ReleaseRagdollPull(**It); xanimation::DeactivateRagdoll((*It)->m_Runtime); V.erase(It); break; }
         pSystem->UpdateSubSteps();
     }
 
@@ -183,7 +183,7 @@ namespace xlioncore::physics
     void DestroyRagdollWorld( ragdoll_world* pWorld ) noexcept
     {
         if (!pWorld) return;
-        for (auto& p : pWorld->m_Ragdolls) xanimation::DeactivateRagdoll(p->m_Runtime);
+        for (auto& p : pWorld->m_Ragdolls) { ReleaseRagdollPull(*p); xanimation::DeactivateRagdoll(p->m_Runtime); }
         b3DestroyWorld(pWorld->m_World);
         delete pWorld;
     }
@@ -211,5 +211,47 @@ namespace xlioncore::physics
         for (const auto& p : World.m_Ragdolls) n = std::max(n, p->m_SubSteps);
         b3World_Step(World.m_World, Dt, n);
         for (auto& p : World.m_Ragdolls) xanimation::CaptureRagdoll(p->m_Runtime);
+    }
+
+    bool RagdollBodyFrame( const ragdoll& R, int iBody, xanimation::rigid& Out ) noexcept
+    {
+        const auto& B = R.m_Runtime.m_Box.m_Bodies;
+        if (iBody < 0 || iBody >= int(B.size()) || !b3Body_IsValid(B[std::size_t(iBody)])) return false;
+        Out = xanimation::FromB3(b3Body_GetTransform(B[std::size_t(iBody)]));
+        return true;
+    }
+
+    void ReleaseRagdollPull( ragdoll& R ) noexcept
+    {
+        if (b3Joint_IsValid(R.m_PullJoint)) b3DestroyJoint(R.m_PullJoint, true);
+        if (b3Body_IsValid(R.m_PullAnchor)) b3DestroyBody(R.m_PullAnchor);
+        R.m_PullJoint = b3_nullJointId; R.m_PullAnchor = b3_nullBodyId; R.m_PullBody = -1;
+    }
+
+    // A mouse joint as Box2D v3 makes it: a static anchor and a motor joint whose spring (solved in the step, soft and stable at any stiffness)
+    // pulls the grabbed point to the anchor's frame; no torque. Its force is capped at four times the ragdoll's weight (it lifts it by a hand and holds tight, never throws it).
+    void PullRagdollBody( ragdoll& R, int iBody, const xmath::fvec3& Local, const xmath::fvec3& Target, float Hertz ) noexcept
+    {
+        const auto& B = R.m_Runtime.m_Box.m_Bodies;
+        if (iBody < 0 || iBody >= int(B.size()) || !b3Body_IsValid(B[std::size_t(iBody)])) { ReleaseRagdollPull(R); return; }
+        const auto Id = B[std::size_t(iBody)];
+        if (R.m_PullBody != iBody || !b3Joint_IsValid(R.m_PullJoint))
+        {
+            ReleaseRagdollPull(R);
+            float Total = 0; for (auto I : B) if (b3Body_IsValid(I)) Total += b3Body_GetMass(I);
+            b3BodyDef AD = b3DefaultBodyDef();
+            R.m_PullAnchor = b3CreateBody(b3Body_GetWorld(Id), &AD);
+            b3MotorJointDef JD = b3DefaultMotorJointDef();
+            JD.base.bodyIdA = R.m_PullAnchor; JD.base.bodyIdB = Id;
+            JD.base.localFrameA = { xanimation::ToB3(Target), { { 0, 0, 0 }, 1 } };
+            JD.base.localFrameB = { xanimation::ToB3(Local), { { 0, 0, 0 }, 1 } };
+            JD.linearHertz = Hertz; JD.linearDampingRatio = 0.7f; JD.maxSpringForce = 4.0f * Total * 9.81f;
+            JD.angularHertz = 0; JD.maxSpringTorque = 0; JD.maxVelocityForce = 0; JD.maxVelocityTorque = 0;
+            R.m_PullJoint = b3CreateMotorJoint(b3Body_GetWorld(Id), &JD);
+            R.m_PullBody  = iBody;
+        }
+        b3Joint_SetLocalFrameA(R.m_PullJoint, { xanimation::ToB3(Target), { { 0, 0, 0 }, 1 } });
+        b3MotorJoint_SetLinearHertz(R.m_PullJoint, Hertz);
+        b3Body_SetAwake(Id, true);
     }
 }

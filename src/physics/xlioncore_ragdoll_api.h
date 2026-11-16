@@ -56,6 +56,13 @@ namespace xlioncore::physics
                                                 , std::span<const xanimation::rigid> RestModel, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur
                                                 , float Dt, std::span<const std::pair<int, int>> Filter, const ragdoll_params& Params, std::string* pNote ) noexcept;
     XLIONCORE_API void           StepRagdollWorld( ragdoll_world& World, float Dt ) noexcept;     // one fixed step (the ragdolls' sub-steps), then every ragdoll captured
+
+    // The Ragdoll editor's hand (test the ragdoll by pulling it): a body's world frame now (false: no such body); a pull of the point Local (in
+    // the body's frame) toward Target, a mouse joint as Box2D v3 makes one (a motor joint's spring to a static anchor, Hertz, force capped at
+    // four times the ragdoll's weight); call it before each step while the hand holds, and ReleaseRagdollPull when it lets go.
+    XLIONCORE_API bool           RagdollBodyFrame( const ragdoll& Ragdoll, int iBody, xanimation::rigid& Out ) noexcept;
+    XLIONCORE_API void           PullRagdollBody( ragdoll& Ragdoll, int iBody, const xmath::fvec3& Local, const xmath::fvec3& Target, float Hertz = 12.0f ) noexcept;
+    XLIONCORE_API void           ReleaseRagdollPull( ragdoll& Ragdoll ) noexcept;
 }
 
 #endif

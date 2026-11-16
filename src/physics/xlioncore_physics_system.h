@@ -66,6 +66,9 @@ namespace xlioncore::physics
         xanimation::body_graph      m_Graph;
         xanimation::ragdoll_runtime m_Runtime;
         int                         m_SubSteps = 4;
+        b3BodyId                    m_PullAnchor = b3_nullBodyId;   // the editor's hand (PullRagdollBody): a static anchor and a motor joint to the grabbed body
+        b3JointId                   m_PullJoint  = b3_nullJointId;
+        int                         m_PullBody   = -1;
     };
 
     struct system : xecs::system::instance

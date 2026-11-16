@@ -28,6 +28,8 @@ struct resource_mgr_user_data
 #include "plugins/xanim_package.plugin/source/xanim_package_xgpu_rsc_loader.cpp"
 #include "plugins/xgeom_skin.plugin/source/xgeom_skin_xgpu_rsc_loader.h"
 #include "plugins/xgeom_skin.plugin/source/xgeom_skin_xgpu_rsc_loader.cpp"
+#include "plugins/xragdoll.plugin/source/xragdoll_xgpu_rsc_loader.h"                  // the Ragdoll (its body model at run time: xlioncore_ragdoll.h)
+#include "plugins/xragdoll.plugin/source/xragdoll_xgpu_rsc_loader.cpp"
 #include "plugins/xrender_graph.plugin/source/xrender_graph_xgpu_rsc_loader.h"      // the RenderGraph: a Level's post chain (render graph stage D)
 #include "plugins/xrender_graph.plugin/source/xrender_graph_xgpu_rsc_loader.cpp"
 

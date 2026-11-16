@@ -19,7 +19,9 @@
 #include "../transform/xlioncore_transform.h"
 #include "../tags/xlioncore_tags.h"
 #include "../game/xlioncore_game.h"
+#include "dependencies/xAnimation/source/adapters/xanimation_ragdoll_runtime.h"
 #include <algorithm>
+#include <memory>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -58,6 +60,14 @@ namespace xlioncore::physics
         return nullptr;
     }
 
+    // A ragdoll of this world (xlioncore_ragdoll_api.h): its own copy of the body graph (the runtime points at it), captured after every step
+    struct ragdoll
+    {
+        xanimation::body_graph      m_Graph;
+        xanimation::ragdoll_runtime m_Runtime;
+        int                         m_SubSteps = 4;
+    };
+
     struct system : xecs::system::instance
     {
         constexpr static auto typedef_v = xecs::system::type::update{ .m_pName = "Physics" };
@@ -84,6 +94,14 @@ namespace xlioncore::physics
         std::vector<sensor_touch>  m_SensorBegin, m_SensorEnd;      // what the last step reported (kept to reuse the memory)
         std::vector<contact_touch> m_ContactBegin, m_ContactEnd;
         std::vector<contact_hit>   m_ContactHit;
+        std::vector<std::unique_ptr<ragdoll>> m_Ragdolls;  // the active ragdolls (freed with the world: their bodies are its)
+
+        void UpdateSubSteps(void) noexcept
+        {
+            int n = 4;
+            for (const auto& p : m_Ragdolls) n = std::max(n, p->m_SubSteps);
+            m_Backend.m_SubSteps = n;
+        }
 
         system(xecs::game_mgr::instance& GameMgr) noexcept : xecs::system::instance(GameMgr) {}
 
@@ -370,6 +388,7 @@ namespace xlioncore::physics
                 });
 
                 m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
+                for (auto& p : m_Ragdolls) xanimation::CaptureRagdoll(p->m_Runtime);
                 SendSensorEvents();
                 RunConnector(1);
             }

@@ -83,6 +83,9 @@ namespace xlioncore::physics
         // The same for the shapes that asked for contact events: who started touching, who stopped, who hit (faster than the world's hit threshold), sorted by (A, B). Pairs with a body without an entity
         // are dropped.
         void         DrainContactEvents ( std::vector<contact_touch>& Begin, std::vector<contact_touch>& End, std::vector<contact_hit>& Hit ) const noexcept;
+        b3WorldId    World              ( void ) const noexcept { return m_World; }     // the ragdolls (xlioncore_ragdoll_api.h) make their bodies in it
+
+        int          m_SubSteps = 4;    // Box3D sub-steps a Step: raised while ragdolls are active (their joints need 16 at a fall's impact)
 
     private:
         b3WorldId m_World;

@@ -132,8 +132,7 @@ namespace xlioncore::physics
 
     void backend::Step(float FixedDeltaTime) noexcept
     {
-        constexpr int SubStepCount = 4;
-        b3World_Step(m_World, FixedDeltaTime, SubStepCount);
+        b3World_Step(m_World, FixedDeltaTime, m_SubSteps);
     }
 
     xmath::fvec3 backend::GetPosition(b3BodyId BodyId) const noexcept

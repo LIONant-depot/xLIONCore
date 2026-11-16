@@ -12,10 +12,27 @@ FetchAndPopulate("https://github.com/LIONant-depot/xprofile.git" "main")      # 
 include(FetchContent)
 set(BOX3D_SAMPLES OFF CACHE BOOL "" FORCE)
 set(BOX3D_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+# Pinned: our fork xbox3d (decisions R55/R56) at f36d061 + our elliptical swing limit (R54). (The pin started 2026-10-28: upstream main
+# moved under a configured tree and a fresh configure fetched new joints the tree's project did not list: LNK2019.)
+set(XLION_BOX3D_TAG 226ff7db8102ed1217338366a610cdfa10cc4336)
+set(XLION_BOX3D_DIR "${CMAKE_SOURCE_DIR}/dependencies/box3d")
+# An existing clone is used as it is: FetchContent never runs git on it. A changed GIT_REPOSITORY or GIT_TAG makes FetchContent re-clone,
+# and its clone step deletes SOURCE_DIR first - the clone every tree shares, with any local commit in it (2026-11-16: the fork URL change
+# wiped dependencies/box3d and an unpushed commit). A clone at another commit is reported, never replaced.
+if(EXISTS "${XLION_BOX3D_DIR}/.git" AND NOT FETCHCONTENT_SOURCE_DIR_BOX3D)
+  set(FETCHCONTENT_SOURCE_DIR_BOX3D "${XLION_BOX3D_DIR}")
+  find_package(Git QUIET)
+  if(GIT_FOUND)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${XLION_BOX3D_DIR}" rev-parse HEAD OUTPUT_VARIABLE XLION_BOX3D_HEAD OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(NOT XLION_BOX3D_HEAD STREQUAL XLION_BOX3D_TAG)
+      message(WARNING "dependencies/box3d is at ${XLION_BOX3D_HEAD}, the pin is ${XLION_BOX3D_TAG}: check it out (git -C dependencies/box3d checkout ${XLION_BOX3D_TAG})")
+    endif()
+  endif()
+endif()
 FetchContent_Declare(box3d
-  GIT_REPOSITORY https://github.com/erincatto/box3d.git
-  GIT_TAG f36d061ba26998c87cb7dc593a4065aaa03fb7eb     # pinned (f36d061, 'CMake improvements'): main moved under a configured tree - a fresh configure fetched 3362633's new joints and the tree's box3d project, made before, did not list them (LNK2019, 2026-10-28)
-  SOURCE_DIR "${CMAKE_SOURCE_DIR}/dependencies/box3d"
+  GIT_REPOSITORY https://github.com/nickreal03/xbox3d.git
+  GIT_TAG ${XLION_BOX3D_TAG}
+  SOURCE_DIR "${XLION_BOX3D_DIR}"
 )
 FetchContent_MakeAvailable(box3d)
 

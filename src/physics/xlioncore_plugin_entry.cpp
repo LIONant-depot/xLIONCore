@@ -1,6 +1,8 @@
 // Self-registration entry points - same ABI Game.dll implements (xecs_plugin_api.h) plus
 // XScript_GetComponentDisplayInfo so the editor can sort/filter inspector categories/priorities.
 // Components/systems announce via XSCRIPT_REGISTER_* in their headers; this TU walks the lists.
+#include <algorithm>
+#include <vector>
 #include "xlioncore_physics_system.h"
 #include "xlioncore_physics_api.h"
 #include "xlioncore_ragdoll_api.h"
@@ -94,6 +96,33 @@ namespace xlioncore::physics
         Out.m_Fraction = R.fraction;
         Out.m_Entity = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b3Body_GetUserData(b3Shape_GetBody(R.shapeId))));
         return Out;
+    }
+
+    int PushBodies( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Center, float Radius, const xmath::fvec3& Velocity ) noexcept
+    {
+        auto* pGame   = game::From(GameMgr);
+        auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
+        const float Speed = Velocity.Length();
+        if (!pSystem || Speed < 1e-4f) return 0;
+        struct ctx { std::vector<b3BodyId> m_Bodies; } C;
+        const b3AABB Box{ { Center.m_X - Radius, Center.m_Y - Radius, Center.m_Z - Radius }, { Center.m_X + Radius, Center.m_Y + Radius, Center.m_Z + Radius } };
+        b3World_OverlapAABB(pSystem->m_Backend.World(), Box, b3DefaultQueryFilter(), [](b3ShapeId Shape, void* p) -> bool
+        {
+            auto& C = *static_cast<ctx*>(p); const auto Body = b3Shape_GetBody(Shape);
+            if (b3Body_GetType(Body) == b3_dynamicBody && std::none_of(C.m_Bodies.begin(), C.m_Bodies.end(), [&](b3BodyId B) { return B.index1 == Body.index1 && B.generation == Body.generation; })) C.m_Bodies.push_back(Body);
+            return true;
+        }, &C);
+        const auto Dir = Velocity * (1.0f / Speed);
+        for (const auto B : C.m_Bodies)
+        {
+            const auto V = b3Body_GetLinearVelocity(B);
+            const float Along = V.x * Dir.m_X + V.y * Dir.m_Y + V.z * Dir.m_Z;
+            if (Along >= Speed) continue;
+            const float Add = Speed - Along;
+            b3Body_SetLinearVelocity(B, b3Vec3{ V.x + Dir.m_X * Add, V.y + Dir.m_Y * Add, V.z + Dir.m_Z * Add });
+            b3Body_SetAwake(B, true);
+        }
+        return int(C.m_Bodies.size());
     }
 
     bool TeleportDynamicBody

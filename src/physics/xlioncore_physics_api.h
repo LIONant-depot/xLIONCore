@@ -53,6 +53,10 @@ namespace xlioncore::physics
     // b3World_CastRayClosest, the default filter; sensors and back faces are skipped). No game physics or nothing hit: m_bHit false.
     // The feet's ground casts (K3) and any game query.
     XLIONCORE_API ray_hit CastRayClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const xmath::fvec3& Translation ) noexcept;
+
+    // Pushes the dynamic bodies within Radius of Center (their shapes' boxes overlap the sphere's box) to at least Velocity along it: a
+    // kick, a shove (an animation's Contact event). A body already faster that way keeps its speed. Returns how many it pushed.
+    XLIONCORE_API int PushBodies( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Center, float Radius, const xmath::fvec3& Velocity ) noexcept;
 }
 
 #endif // XLIONCORE_PHYSICS_API_H

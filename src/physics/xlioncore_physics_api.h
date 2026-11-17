@@ -63,6 +63,12 @@ namespace xlioncore::physics
     XLIONCORE_API ray_hit CastShapeClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const query_shape& Shape, const xmath::fvec3& Translation, std::uint64_t SkipEntity = 0 ) noexcept;
     XLIONCORE_API int     OverlapShape    ( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const query_shape& Shape, std::uint64_t* pOut = nullptr, int MaxOut = 0 ) noexcept;
 
+    // The solid hits (contact hit events: shapes with ContactEvents on, faster than 1 m/s) of the steps since the last call, in step order: the
+    // two entities, where, the normal (from A to B), the approach speed, and an id unique in this game world (an interaction event id, R3b').
+    // Returns how many there were (writes up to MaxOut); the rest are dropped with this call.
+    struct impact { std::uint64_t m_Id = 0, m_A = 0, m_B = 0; xmath::fvec3 m_Point{}, m_Normal{}; float m_Speed = 0; };
+    XLIONCORE_API int TakeImpacts( xecs::game_mgr::instance& GameMgr, impact* pOut, int MaxOut ) noexcept;
+
     // A character's capsule moved through the world (plan 13.4; Box3D's mover: b3World_CollideMover + b3SolvePlanes + b3World_CastMover,
     // as its character sample): Base is the feet (the capsule stands on it, its bottom Step above so the ground and kerbs under that do not
     // block it - the feet's ground fit does the height), Delta the move asked. Slides along walls; dynamic bodies (a ball) do not block it.

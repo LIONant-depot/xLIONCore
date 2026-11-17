@@ -180,6 +180,8 @@ namespace xlioncore::physics
         std::vector<sensor_touch>  m_SensorBegin, m_SensorEnd;      // what the last step reported (kept to reuse the memory)
         std::vector<contact_touch> m_ContactBegin, m_ContactEnd;
         std::vector<contact_hit>   m_ContactHit;
+        std::vector<contact_hit>   m_HitsUnread;    // every step's hits until TakeImpacts reads them (a per-frame reader sees the steps of its frame)
+        std::uint64_t              m_nHits = 0;     // the hits so far: each one's id (an interaction event id: R3b')
         std::vector<std::unique_ptr<ragdoll>> m_Ragdolls;  // the active ragdolls (freed with the world: their bodies are its)
         std::unordered_set<std::uint64_t>     m_HitLedger; // R3b' (contract 2.2): the interaction events applied in this world - an event is applied once
 
@@ -349,6 +351,7 @@ namespace xlioncore::physics
 
             // The same for the solid contacts of the shapes that asked (see contact_begin_event).
             m_Backend.DrainContactEvents(m_ContactBegin, m_ContactEnd, m_ContactHit);
+            if (m_HitsUnread.size() < 4096) m_HitsUnread.insert(m_HitsUnread.end(), m_ContactHit.begin(), m_ContactHit.end());     // (ponytail: a frame past 4096 hits drops the rest)
             for (const auto& Touch : m_ContactBegin)
                 getGameMgr().SendGlobalEvent<contact_begin_event>(Touch);
             for (const auto& Hit : m_ContactHit)

@@ -116,6 +116,22 @@ namespace xlioncore::physics
         return Out;
     }
 
+    int TakeImpacts( xecs::game_mgr::instance& GameMgr, impact* pOut, int MaxOut ) noexcept
+    {
+        auto* pGame   = game::From(GameMgr);
+        auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
+        if (!pSystem) return 0;
+        const int n = int(pSystem->m_HitsUnread.size());
+        for (int i = 0; i < n; ++i)
+        {
+            const auto& H = pSystem->m_HitsUnread[std::size_t(i)];
+            const std::uint64_t Id = ++pSystem->m_nHits;
+            if (pOut && i < MaxOut) pOut[i] = { Id, H.m_A.m_Value, H.m_B.m_Value, xmath::fvec3(float(H.m_Point.x), float(H.m_Point.y), float(H.m_Point.z)), xmath::fvec3(H.m_Normal.x, H.m_Normal.y, H.m_Normal.z), H.m_ApproachSpeed };
+        }
+        pSystem->m_HitsUnread.clear();
+        return n;
+    }
+
     int OverlapShape( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const query_shape& Shape, std::uint64_t* pOut, int MaxOut ) noexcept
     {
         auto* pGame   = game::From(GameMgr);
@@ -313,6 +329,20 @@ namespace xlioncore::physics
             std::printf("%c", 10); std::fflush(stdout);
         }
         return Out;
+    }
+
+    void RagdollIgnoreEntity( xecs::game_mgr::instance& GameMgr, ragdoll& R, std::uint64_t Entity ) noexcept
+    {
+        const xecs::component::entity E{ Entity };
+        if (!GameMgr.m_ComponentMgr.isEntityValid(E)) return;
+        const auto* pBody = GetComponentPtr<physics_body>(GameMgr, E);
+        if (!pBody || B3_IS_NULL(pBody->m_BodyId) || !b3Body_IsValid(pBody->m_BodyId)) return;
+        for (auto B : R.m_Runtime.m_Box.m_Bodies)
+        {
+            b3FilterJointDef D = b3DefaultFilterJointDef();
+            D.base.bodyIdA = pBody->m_BodyId; D.base.bodyIdB = B;
+            R.m_Runtime.m_Filters.push_back(b3CreateFilterJoint(b3Body_GetWorld(B), &D));
+        }
     }
 
     void HitRagdoll( xecs::game_mgr::instance& /*GameMgr*/, ragdoll& R, std::uint64_t EventId, const xmath::fvec3& Point, const xmath::fvec3& Impulse ) noexcept

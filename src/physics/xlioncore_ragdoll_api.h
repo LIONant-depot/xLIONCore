@@ -62,6 +62,10 @@ namespace xlioncore::physics
     // before the next physics step and only once per EventId in this game world (the ledger: the same event sent again is dropped and logged)
     XLIONCORE_API void HitRagdoll( xecs::game_mgr::instance& GameMgr, ragdoll& Ragdoll, std::uint64_t EventId, const xmath::fvec3& Point, const xmath::fvec3& Impulse ) noexcept;
 
+    // The ragdoll's bodies never touch Entity's body (contract 2.6: no double collision coverage - a player's capsule and the Lilly's ragdoll
+    // inside it are the same character). Box3D filter joints, gone with the ragdoll. Entity without a body: nothing.
+    XLIONCORE_API void RagdollIgnoreEntity( xecs::game_mgr::instance& GameMgr, ragdoll& Ragdoll, std::uint64_t Entity ) noexcept;
+
     XLIONCORE_API void PoseRagdoll( const ragdoll& Ragdoll, const xanimation::skeleton_view& Skel, float Alpha, std::span<const xanimation::rigid> Animated, std::span<xanimation::rigid> Out ) noexcept;
     XLIONCORE_API void RagdollStats( const ragdoll& Ragdoll, ragdoll_stats& Out ) noexcept;
     XLIONCORE_API xanimation::rigid RagdollRootBody( const ragdoll& Ragdoll, float Alpha ) noexcept;      // the root body's (the hips') world frame

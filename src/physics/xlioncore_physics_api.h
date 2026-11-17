@@ -13,6 +13,7 @@
 // GameMgr.getUserData<physics::system>() (set in system::OnCreate).
 #include "dependencies/xECSV2/src/xecs.h"
 #include "dependencies/xmath/source/xmath.h"
+#include <span>
 
 #if defined(XLIONCORE_BUILD_SHARED)
     #if defined(XLIONCORE_EXPORTS)
@@ -53,6 +54,14 @@ namespace xlioncore::physics
     // b3World_CastRayClosest, the default filter; sensors and back faces are skipped). No game physics or nothing hit: m_bHit false.
     // The feet's ground casts (K3) and any game query.
     XLIONCORE_API ray_hit CastRayClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const xmath::fvec3& Translation ) noexcept;
+
+    // A character's capsule moved through the world (plan 13.4; Box3D's mover: b3World_CollideMover + b3SolvePlanes + b3World_CastMover,
+    // as its character sample): Base is the feet (the capsule stands on it, its bottom Step above so the ground and kerbs under that do not
+    // block it - the feet's ground fit does the height), Delta the move asked. Slides along walls; dynamic bodies (a ball) do not block it.
+    // Extra: more planes (normal, offset: normal . move >= offset), e.g. other characters. Returns the move actually made.
+    struct mover_plane { xmath::fvec3 m_Normal{}; float m_Offset = 0; };
+    XLIONCORE_API xmath::fvec3 MoveCapsule( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Base, float Radius, float Height, float Step
+                                          , const xmath::fvec3& Delta, std::span<const mover_plane> Extra = {} ) noexcept;
 
     // Pushes the dynamic bodies within Radius of Center (their shapes' boxes overlap the sphere's box) to at least Velocity along it: a
     // kick, a shove (an animation's Contact event). A body already faster that way keeps its speed. Returns how many it pushed.

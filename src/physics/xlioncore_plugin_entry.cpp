@@ -2,6 +2,7 @@
 // XScript_GetComponentDisplayInfo so the editor can sort/filter inspector categories/priorities.
 // Components/systems announce via XSCRIPT_REGISTER_* in their headers; this TU walks the lists.
 #include <algorithm>
+#include <cfloat>
 #include <vector>
 #include "xlioncore_physics_system.h"
 #include "xlioncore_physics_api.h"
@@ -96,6 +97,40 @@ namespace xlioncore::physics
         Out.m_Fraction = R.fraction;
         Out.m_Entity = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b3Body_GetUserData(b3Shape_GetBody(R.shapeId))));
         return Out;
+    }
+
+    xmath::fvec3 MoveCapsule( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Base, float Radius, float Height, float Step
+                            , const xmath::fvec3& Delta, std::span<const mover_plane> Extra ) noexcept
+    {
+        auto* pGame   = game::From(GameMgr);
+        auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
+        if (!pSystem || Radius <= 0) return Delta;
+        const auto World = pSystem->m_Backend.World();
+        const float Bottom = std::max(Step, 0.0f) + Radius, Top = std::max(Bottom, Height - Radius);
+        const b3Capsule Mover{ { 0, Bottom, 0 }, { 0, Top, 0 }, Radius };
+        struct ctx { std::vector<b3CollisionPlane> m_Planes; } C;
+        b3Pos P{ Base.m_X, Base.m_Y, Base.m_Z };
+        const b3Pos Target{ Base.m_X + Delta.m_X, Base.m_Y + Delta.m_Y, Base.m_Z + Delta.m_Z };
+        for (int Iteration = 0; Iteration < 5; ++Iteration)       // (Box3D's sample: collide, solve the planes, cast what is left; until it settles)
+        {
+            C.m_Planes.clear();
+            b3World_CollideMover(World, P, &Mover, b3DefaultQueryFilter(), [](b3ShapeId S, const b3PlaneResult* pR, int n, void* p) -> bool
+            {
+                if (b3Body_GetType(b3Shape_GetBody(S)) == b3_dynamicBody || b3Shape_IsSensor(S)) return true;
+                for (int i = 0; i < n; ++i) static_cast<ctx*>(p)->m_Planes.push_back({ pR[i].plane, FLT_MAX, 0.0f, true });
+                return true;
+            }, &C);
+            const b3Vec3 Moved{ float(P.x - Base.m_X), float(P.y - Base.m_Y), float(P.z - Base.m_Z) };
+            for (const auto& E : Extra)         // (given relative to Base: shifted to where the mover is now)
+                C.m_Planes.push_back({ { { E.m_Normal.m_X, E.m_Normal.m_Y, E.m_Normal.m_Z }, E.m_Offset - (E.m_Normal.m_X * Moved.x + E.m_Normal.m_Y * Moved.y + E.m_Normal.m_Z * Moved.z) }, FLT_MAX, 0.0f, true });
+            const b3Vec3 Want{ float(Target.x - P.x), float(Target.y - P.y), float(Target.z - P.z) };
+            auto D = b3SolvePlanes(Want, C.m_Planes.data(), int(C.m_Planes.size())).delta;
+            const float F = b3World_CastMover(World, P, &Mover, D, b3DefaultQueryFilter(), [](b3ShapeId S, void*) -> bool { return b3Body_GetType(b3Shape_GetBody(S)) != b3_dynamicBody && !b3Shape_IsSensor(S); }, nullptr);
+            D = b3Vec3{ D.x * F, D.y * F, D.z * F };
+            P = b3Pos{ P.x + D.x, P.y + D.y, P.z + D.z };
+            if (D.x * D.x + D.y * D.y + D.z * D.z < 1e-8f) break;
+        }
+        return xmath::fvec3(float(P.x - Base.m_X), float(P.y - Base.m_Y), float(P.z - Base.m_Z));
     }
 
     int PushBodies( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Center, float Radius, const xmath::fvec3& Velocity, pushed_body* pOut, int MaxOut ) noexcept

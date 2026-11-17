@@ -56,7 +56,9 @@ namespace xlioncore::physics
 
     // Pushes the dynamic bodies within Radius of Center (their shapes' boxes overlap the sphere's box) to at least Velocity along it: a
     // kick, a shove (an animation's Contact event). A body already faster that way keeps its speed. Returns how many it pushed.
-    XLIONCORE_API int PushBodies( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Center, float Radius, const xmath::fvec3& Velocity ) noexcept;
+    struct pushed_body { std::uint64_t m_Entity = 0; xmath::fvec3 m_Position{}; xmath::fquat m_Rotation{}; };      // (where it was when pushed)
+    XLIONCORE_API int PushBodies( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Center, float Radius, const xmath::fvec3& Velocity
+                                , pushed_body* pOut = nullptr, int MaxOut = 0 ) noexcept;
 }
 
 #endif // XLIONCORE_PHYSICS_API_H

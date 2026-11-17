@@ -98,7 +98,7 @@ namespace xlioncore::physics
         return Out;
     }
 
-    int PushBodies( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Center, float Radius, const xmath::fvec3& Velocity ) noexcept
+    int PushBodies( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Center, float Radius, const xmath::fvec3& Velocity, pushed_body* pOut, int MaxOut ) noexcept
     {
         auto* pGame   = game::From(GameMgr);
         auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
@@ -113,8 +113,14 @@ namespace xlioncore::physics
             return true;
         }, &C);
         const auto Dir = Velocity * (1.0f / Speed);
+        int nOut = 0;
         for (const auto B : C.m_Bodies)
         {
+            if (pOut && nOut < MaxOut)
+            {
+                const auto P = b3Body_GetPosition(B); const auto Q = b3Body_GetRotation(B);
+                pOut[nOut++] = { static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b3Body_GetUserData(B))), xmath::fvec3(float(P.x), float(P.y), float(P.z)), xmath::fquat(Q.v.x, Q.v.y, Q.v.z, Q.s) };
+            }
             const auto V = b3Body_GetLinearVelocity(B);
             const float Along = V.x * Dir.m_X + V.y * Dir.m_Y + V.z * Dir.m_Z;
             if (Along >= Speed) continue;

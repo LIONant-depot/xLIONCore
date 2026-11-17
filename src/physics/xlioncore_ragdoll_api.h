@@ -58,6 +58,10 @@ namespace xlioncore::physics
     // rotation from its target, degrees (pWorldRms: the same over each body's world rotation, which adds up down a limb).
     XLIONCORE_API float TrackRagdoll( ragdoll& Ragdoll, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur, float Dt, const ragdoll_tracking& Params, float* pWorldRms = nullptr ) noexcept;
 
+    // R3b' (contract 2.2): an interaction event on a ragdoll - Impulse (N s) at the world Point, on the body nearest it, applied right
+    // before the next physics step and only once per EventId in this game world (the ledger: the same event sent again is dropped and logged)
+    XLIONCORE_API void HitRagdoll( xecs::game_mgr::instance& GameMgr, ragdoll& Ragdoll, std::uint64_t EventId, const xmath::fvec3& Point, const xmath::fvec3& Impulse ) noexcept;
+
     XLIONCORE_API void PoseRagdoll( const ragdoll& Ragdoll, const xanimation::skeleton_view& Skel, float Alpha, std::span<const xanimation::rigid> Animated, std::span<xanimation::rigid> Out ) noexcept;
     XLIONCORE_API void RagdollStats( const ragdoll& Ragdoll, ragdoll_stats& Out ) noexcept;
     XLIONCORE_API xanimation::rigid RagdollRootBody( const ragdoll& Ragdoll, float Alpha ) noexcept;      // the root body's (the hips') world frame

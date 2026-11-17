@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <unordered_set>
 
 namespace xlioncore::physics
 {
@@ -77,6 +78,8 @@ namespace xlioncore::physics
         double                      m_StepSumJ = 0, m_StepSumW = 0; // since the last TrackRagdoll: squared errors of the steps (rad^2), averaged over joints / bodies
         int                         m_StepN    = 0;
         int                         m_TraceAt  = 0;
+        struct pending_hit { std::uint64_t m_EventId; int m_Body; xmath::fvec3 m_Point, m_Impulse; };
+        std::vector<pending_hit>    m_Hits;                         // HitRagdoll's queue: applied right before the next step (R3b')
 
         // After a step (the bodies captured): how far they are from the target that step pulled toward, per joint (the relative rotation of its
         // two solver frames, as test_ragdoll_tracking) and per body in the world (errors add down a limb)
@@ -127,6 +130,25 @@ namespace xlioncore::physics
         std::vector<contact_touch> m_ContactBegin, m_ContactEnd;
         std::vector<contact_hit>   m_ContactHit;
         std::vector<std::unique_ptr<ragdoll>> m_Ragdolls;  // the active ragdolls (freed with the world: their bodies are its)
+        std::unordered_set<std::uint64_t>     m_HitLedger; // R3b' (contract 2.2): the interaction events applied in this world - an event is applied once
+
+        // The queued hits, right before a step: each event once (the ledger); one already applied is dropped and said so
+        void ApplyHits(void) noexcept
+        {
+            for (auto& p : m_Ragdolls)
+            {
+                for (const auto& H : p->m_Hits)
+                {
+                    const bool bNew = m_HitLedger.insert(H.m_EventId).second;
+                    const auto& Bodies = p->m_Runtime.m_Box.m_Bodies;
+                    if (bNew && H.m_Body >= 0 && H.m_Body < int(Bodies.size()))
+                        b3Body_ApplyLinearImpulse(Bodies[std::size_t(H.m_Body)], { H.m_Impulse.m_X, H.m_Impulse.m_Y, H.m_Impulse.m_Z }, b3Pos{ H.m_Point.m_X, H.m_Point.m_Y, H.m_Point.m_Z }, true);
+                    std::printf("[Ragdoll] hit %llu %s: body %d, impulse %.1f N s\n", static_cast<unsigned long long>(H.m_EventId), bNew ? "applied" : "duplicate (already applied: dropped)", H.m_Body, H.m_Impulse.Length());
+                    std::fflush(stdout);
+                }
+                p->m_Hits.clear();
+            }
+        }
 
         void UpdateSubSteps(void) noexcept
         {
@@ -461,6 +483,7 @@ namespace xlioncore::physics
                     R.m_PrevRotation = m_Backend.GetRotation(Body.m_BodyId);
                 });
 
+                ApplyHits();
                 m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
                 for (auto& p : m_Ragdolls) { xanimation::CaptureRagdoll(p->m_Runtime); p->MeasureTracking(); }
                 SendSensorEvents();

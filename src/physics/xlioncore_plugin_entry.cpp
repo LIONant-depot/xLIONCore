@@ -315,6 +315,19 @@ namespace xlioncore::physics
         return Out;
     }
 
+    void HitRagdoll( xecs::game_mgr::instance& /*GameMgr*/, ragdoll& R, std::uint64_t EventId, const xmath::fvec3& Point, const xmath::fvec3& Impulse ) noexcept
+    {
+        const auto& Bodies = R.m_Runtime.m_Box.m_Bodies;
+        int Best = -1; float BestD = 1e30f;
+        for (std::size_t i = 0; i < Bodies.size(); ++i)
+        {
+            const auto C = b3Body_GetWorldCenter(Bodies[i]);
+            const float d = (xmath::fvec3(float(C.x), float(C.y), float(C.z)) - Point).LengthSq();
+            if (d < BestD) { BestD = d; Best = int(i); }
+        }
+        R.m_Hits.push_back({ EventId, Best, Point, Impulse });
+    }
+
     xanimation::rigid RagdollRootBody( const ragdoll& R, float Alpha ) noexcept
     {
         if (R.m_Runtime.m_Cur.empty()) return {};

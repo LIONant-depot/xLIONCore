@@ -14,6 +14,7 @@
 #include "dependencies/xECSV2/src/xecs.h"
 #include "dependencies/xmath/source/xmath.h"
 #include <span>
+#include "xlioncore_physics_shape.h"
 
 #if defined(XLIONCORE_BUILD_SHARED)
     #if defined(XLIONCORE_EXPORTS)
@@ -54,6 +55,13 @@ namespace xlioncore::physics
     // b3World_CastRayClosest, the default filter; sensors and back faces are skipped). No game physics or nothing hit: m_bHit false.
     // The feet's ground casts (K3) and any game query.
     XLIONCORE_API ray_hit CastRayClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const xmath::fvec3& Translation ) noexcept;
+
+    // Shape casts and overlaps (plan 13.2; xlioncore_physics_queries.h): the first thing Shape (relative to Origin) hits moving along
+    // Translation - sensors and SkipEntity's bodies (0: none, e.g. the caster's own) left out; a shape that starts inside something hits at
+    // fraction 0 - and the entities whose bodies overlap Shape at Origin (each once; returns how many, writes up to MaxOut). No game physics:
+    // no hit, 0.
+    XLIONCORE_API ray_hit CastShapeClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const query_shape& Shape, const xmath::fvec3& Translation, std::uint64_t SkipEntity = 0 ) noexcept;
+    XLIONCORE_API int     OverlapShape    ( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const query_shape& Shape, std::uint64_t* pOut = nullptr, int MaxOut = 0 ) noexcept;
 
     // A character's capsule moved through the world (plan 13.4; Box3D's mover: b3World_CollideMover + b3SolvePlanes + b3World_CastMover,
     // as its character sample): Base is the feet (the capsule stands on it, its bottom Step above so the ground and kerbs under that do not

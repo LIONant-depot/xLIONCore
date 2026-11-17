@@ -7,6 +7,7 @@
 #include "xlioncore_physics_system.h"
 #include "xlioncore_physics_api.h"
 #include "xlioncore_ragdoll_api.h"
+#include "xlioncore_physics_queries.h"
 #include "../transform/xlioncore_transform.h"
 #include "../transform/xlioncore_locomotion.h"           // (2026-11-17: the game <-> animation meeting point)
 #include "../tags/xlioncore_tags.h"
@@ -100,6 +101,30 @@ namespace xlioncore::physics
         Out.m_Fraction = R.fraction;
         Out.m_Entity = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b3Body_GetUserData(b3Shape_GetBody(R.shapeId))));
         return Out;
+    }
+
+    ray_hit CastShapeClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const query_shape& Shape, const xmath::fvec3& Translation, std::uint64_t SkipEntity ) noexcept
+    {
+        ray_hit Out;
+        auto* pGame   = game::From(GameMgr);
+        auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
+        if (!pSystem) return Out;
+        const auto EntityOf = [](b3ShapeId S) noexcept { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b3Body_GetUserData(b3Shape_GetBody(S)))); };
+        const auto H = physics::CastShapeClosest(pSystem->m_Backend.World(), Origin, Shape, Translation, b3DefaultQueryFilter(), [&](b3ShapeId S) { return SkipEntity && EntityOf(S) == SkipEntity; });
+        if (!H.m_bHit) return Out;
+        Out = { true, H.m_Point, H.m_Normal, H.m_Fraction, EntityOf(H.m_Shape) };
+        return Out;
+    }
+
+    int OverlapShape( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const query_shape& Shape, std::uint64_t* pOut, int MaxOut ) noexcept
+    {
+        auto* pGame   = game::From(GameMgr);
+        auto* pSystem = pGame ? pGame->m_pPhysics : nullptr;
+        if (!pSystem) return 0;
+        std::vector<b3BodyId> Bodies;
+        physics::OverlapShape(pSystem->m_Backend.World(), Origin, Shape, Bodies);
+        for (int i = 0; i < int(Bodies.size()) && pOut && i < MaxOut; ++i) pOut[i] = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(b3Body_GetUserData(Bodies[std::size_t(i)])));
+        return int(Bodies.size());
     }
 
     xmath::fvec3 MoveCapsule( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Base, float Radius, float Height, float Step

@@ -9,6 +9,7 @@
 #include "dependencies/xECSV2/src/xecs.h"
 #include "dependencies/xmath/source/xmath.h"
 #include "plugins/xscript_module.plugin/source/Runtime/xscript_registration.h"
+#include <string>
 
 namespace xlioncore
 {
@@ -19,11 +20,13 @@ namespace xlioncore
         xmath::fvec3    m_Move          {0, 0, 0};      // world units per second, horizontal: where the game wants it to go (zero: stand)
         xmath::fvec3    m_Face          {0, 0, 0};      // a world direction to face (zero: face where it goes)
         xmath::fvec3    m_FeetVelocity  {0, 0, 0};      // (written by the animation: how fast its feet carry it this update, world)
+        std::string     m_Action;                       // an action to play once by its clip's name (a kick, a dive); the game clears it to ask again
 
         XPROPERTY_DEF
         ( "Locomotion", locomotion
         , obj_member<"Move", &locomotion::m_Move, member_help<"Where the game wants the character to go: a world velocity (units per second). An Animation on this entity or a child of it walks there">>
         , obj_member<"Face", &locomotion::m_Face, member_help<"A world direction to face while it goes (zero: it faces where it goes)">>
+        , obj_member<"Action", &locomotion::m_Action, member_help<"An action to play once, by its clip's name (Kick, DiveLeft...): the animation plays it through, then walks again. Clear it before asking the same action again">>
         , obj_member<"FeetVelocity", &locomotion::m_FeetVelocity, member_flags<flags::SHOW_READONLY, flags::DONT_SAVE>, member_help<"Written by the animation: how fast its feet carry it this update (world). A game moving a physics body holds the body to it">>
         )
     };

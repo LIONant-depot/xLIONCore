@@ -81,6 +81,57 @@ namespace xlioncore::physics
         struct pending_hit { std::uint64_t m_EventId; int m_Body; xmath::fvec3 m_Point, m_Impulse; };
         std::vector<pending_hit>    m_Hits;                         // HitRagdoll's queue: applied right before the next step (R3b')
 
+        // XLION_RAGDOLL_DUMP: every step written next to the activation's file (<prefix><n>_steps.txt, xanimation_ragdoll_dump.h): the replay of
+        // the transaction (tests/test_ragdoll_track_replay.cpp)
+        std::FILE*                  m_pStepLog = nullptr;
+        xanimation::ragdoll_step    m_StepRec;                      // the step being recorded (targets and hits gathered before it, frames after)
+        std::vector<xanimation::rigid> m_TrackPrev;                 // TrackRagdoll's last call: the target one step back and its settings
+        float                       m_TrackGain = 0, m_TrackDamping = 1, m_TrackFF = 0, m_TrackDt = 0;
+        bool                        m_bTrackSupported = false;
+        int                         m_nSteps = 0;
+
+        ragdoll() = default;
+        ragdoll(const ragdoll&) = delete;
+        ~ragdoll() { if (m_pStepLog) std::fclose(m_pStepLog); }
+
+        void OpenStepLog(void) noexcept
+        {
+#if defined(_MSC_VER)
+#pragma warning(suppress: 4996)
+#endif
+            const char* p = std::getenv("XLION_RAGDOLL_DUMP");
+            if (p && *p && m_Runtime.m_DumpIndex >= 0 && !m_pStepLog)
+            {
+#if defined(_MSC_VER)
+#pragma warning(suppress: 4996)
+#endif
+                m_pStepLog = std::fopen((std::string(p) + std::to_string(m_Runtime.m_DumpIndex) + "_steps.txt").c_str(), "w");
+            }
+        }
+
+        // Right before a step: what the step is given (after ApplyHits filled the hits)
+        void RecordBeforeStep(void) noexcept
+        {
+            if (!m_pStepLog) return;
+            auto& S = m_StepRec;
+            S.m_Step = m_nSteps;
+            S.m_bTracking = m_TrackTarget.empty() ? 0 : 1; S.m_bSupported = m_bTrackSupported ? 1 : 0;
+            S.m_Gain = m_TrackGain; S.m_Damping = m_TrackDamping; S.m_FeedForward = m_TrackFF; S.m_TrackDt = m_TrackDt;
+            S.m_Target = m_TrackTarget; S.m_TargetPrev = m_TrackPrev;
+            if (S.m_TargetPrev.size() != S.m_Target.size()) S.m_TargetPrev = S.m_Target;
+            const auto& B = m_Runtime.m_Box.m_Bodies;
+            if (!B.empty()) { S.m_RootV = xanimation::FromB3(b3Body_GetLinearVelocity(B[0])); S.m_RootW = xanimation::FromB3(b3Body_GetAngularVelocity(B[0])); }
+        }
+        // After the step and the capture: the frames, the record written
+        void RecordAfterStep(void) noexcept
+        {
+            ++m_nSteps;
+            if (!m_pStepLog) return;
+            m_StepRec.m_After = m_Runtime.m_Cur;
+            xanimation::AppendStep(m_pStepLog, m_StepRec);
+            m_StepRec = {};
+        }
+
         // After a step (the bodies captured): how far they are from the target that step pulled toward, per joint (the relative rotation of its
         // two solver frames, as test_ragdoll_tracking) and per body in the world (errors add down a limb)
         void MeasureTracking(void) noexcept
@@ -140,6 +191,7 @@ namespace xlioncore::physics
                 for (const auto& H : p->m_Hits)
                 {
                     const bool bNew = m_HitLedger.insert(H.m_EventId).second;
+                    if (p->m_pStepLog) p->m_StepRec.m_Hits.push_back({ H.m_EventId, H.m_Body, H.m_Point, H.m_Impulse, bNew ? 0 : 1 });
                     const auto& Bodies = p->m_Runtime.m_Box.m_Bodies;
                     if (bNew && H.m_Body >= 0 && H.m_Body < int(Bodies.size()))
                         b3Body_ApplyLinearImpulse(Bodies[std::size_t(H.m_Body)], { H.m_Impulse.m_X, H.m_Impulse.m_Y, H.m_Impulse.m_Z }, b3Pos{ H.m_Point.m_X, H.m_Point.m_Y, H.m_Point.m_Z }, true);
@@ -484,8 +536,9 @@ namespace xlioncore::physics
                 });
 
                 ApplyHits();
+                for (auto& p : m_Ragdolls) p->RecordBeforeStep();
                 m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
-                for (auto& p : m_Ragdolls) { xanimation::CaptureRagdoll(p->m_Runtime); p->MeasureTracking(); }
+                for (auto& p : m_Ragdolls) { xanimation::CaptureRagdoll(p->m_Runtime); p->MeasureTracking(); p->RecordAfterStep(); }
                 SendSensorEvents();
                 RunConnector(1);
             }

@@ -54,8 +54,9 @@ namespace xlioncore::physics
         float   m_FeedForward = 0.3f;   // the velocity motor's torque cap, in spring torques per radian (0: spring only)
         bool    m_bSupported  = true;
     };
-    // Returns how far the bodies are from the animation at their time (the bodies now vs BonePrev): the rms of each body's rotation from its target, degrees.
-    XLIONCORE_API float TrackRagdoll( ragdoll& Ragdoll, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur, float Dt, const ragdoll_tracking& Params ) noexcept;
+    // Returns how far the joints were from their targets after each physics step since the last call (-1: no step ran): the rms over the joints of each joint's
+    // rotation from its target, degrees (pWorldRms: the same over each body's world rotation, which adds up down a limb).
+    XLIONCORE_API float TrackRagdoll( ragdoll& Ragdoll, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur, float Dt, const ragdoll_tracking& Params, float* pWorldRms = nullptr ) noexcept;
 
     XLIONCORE_API void PoseRagdoll( const ragdoll& Ragdoll, const xanimation::skeleton_view& Skel, float Alpha, std::span<const xanimation::rigid> Animated, std::span<xanimation::rigid> Out ) noexcept;
     XLIONCORE_API void RagdollStats( const ragdoll& Ragdoll, ragdoll_stats& Out ) noexcept;

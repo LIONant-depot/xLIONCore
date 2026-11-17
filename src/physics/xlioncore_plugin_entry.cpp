@@ -241,7 +241,7 @@ namespace xlioncore::physics
         Out.m_ComY = Out.m_Mass > 0 ? float(MY / Out.m_Mass) : 0.0f;
     }
 
-    float TrackRagdoll( ragdoll& R, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur, float Dt, const ragdoll_tracking& P ) noexcept
+    float TrackRagdoll( ragdoll& R, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur, float Dt, const ragdoll_tracking& P, float* pWorldRms ) noexcept
     {
         const auto& G = R.m_Graph; auto& Box = R.m_Runtime.m_Box;
         if (Box.m_Bodies.empty() || G.m_Bodies.size() != Box.m_Bodies.size() || Dt <= 0) return -1;
@@ -259,25 +259,34 @@ namespace xlioncore::physics
             if (b3Body_GetType(Root) != b3_kinematicBody) b3Body_SetType(Root, b3_kinematicBody);
             b3Body_SetTargetTransform(Root, b3MakeWorldTransform(xanimation::ToB3(Cur[0])), Dt, true);
         }
+        // XLION_RAGDOLL_NO_SELF=1 (a narrowing experiment): the ragdoll's bodies stop colliding with each other (one negative group)
+        static const bool s_bNoSelf = [] { char* p = nullptr; std::size_t n = 0; const bool b = _dupenv_s(&p, &n, "XLION_RAGDOLL_NO_SELF") == 0 && p && *p && *p != '0'; std::free(p); return b; }();
+        if (s_bNoSelf && R.m_nTrack == 0 && R.m_StepN == 0)
+            for (auto Id : Box.m_Bodies)
+            {
+                b3ShapeId Sh[8]; const int n = b3Body_GetShapes(Id, Sh, 8);
+                for (int k = 0; k < n; ++k) { auto F = b3Shape_GetFilter(Sh[k]); F.groupIndex = -7; b3Shape_SetFilter(Sh[k], F, true); }
+            }
         xanimation::SetTrackingTargets(Box, G, Cur, P.m_Gain, P.m_Damping, Prev, Dt, P.m_FeedForward);
-        double Sum = 0;
-        for (std::size_t i = 0; i < Cur.size(); ++i)
+        R.m_TrackTarget = Cur;              // (the steps until the next call pull toward these: ragdoll::MeasureTracking measures each)
+        // What the steps since the last call measured: per joint (returned) and per body in the world; -1 when no step ran since
+        float Out = -1;
+        if (R.m_StepN > 0)
         {
-            const auto Q = xanimation::FromB3(b3Body_GetRotation(Box.m_Bodies[i]));
-            const float a = 2 * std::acos(std::min(1.0f, std::abs(Q.Dot(Prev[i].m_Q))));     // (the bodies now are where the last call's target, this call's Prev, pulled them)
-            Sum += double(a) * a;
-            if (R.m_TrackErr.size() != Cur.size()) R.m_TrackErr.assign(Cur.size(), 0.0);
-            R.m_TrackErr[i] += double(a) * a;
+            Out = float(std::sqrt(R.m_StepSumJ / R.m_StepN)) * 57.29578f;
+            if (pWorldRms) *pWorldRms = float(std::sqrt(R.m_StepSumW / R.m_StepN)) * 57.29578f;
+            R.m_StepSumJ = R.m_StepSumW = 0; R.m_StepN = 0;
         }
-        // XLION_RAGDOLL_TRACK_TRACE=1: each body's rms (deg) and its bone, every 240 calls (a narrowing switch)
+        // XLION_RAGDOLL_TRACK_TRACE=1: each joint's rms (deg) and its child bone, every 240 steps (a narrowing switch)
         static const bool s_bTrace = [] { char* p = nullptr; std::size_t n = 0; const bool b = _dupenv_s(&p, &n, "XLION_RAGDOLL_TRACK_TRACE") == 0 && p && *p && *p != '0'; std::free(p); return b; }();
-        if (s_bTrace && ++R.m_nTrack % 240 == 0)
+        if (s_bTrace && R.m_nTrack / 240 != R.m_TraceAt)
         {
-            std::printf("[Ragdoll] track trace (%d calls), hips target %.2f %.2f %.2f, body:bone rms deg:", R.m_nTrack, Cur[0].m_P.m_X, Cur[0].m_P.m_Y, Cur[0].m_P.m_Z);
-            for (std::size_t i = 0; i < Cur.size(); ++i) std::printf(" %zu:%d %.1f", i, G.m_Bodies[i].m_Bone, std::sqrt(R.m_TrackErr[i] / R.m_nTrack) * 57.29578);
+            R.m_TraceAt = R.m_nTrack / 240;
+            std::printf("[Ragdoll] track trace (%d steps), joint:bone rms deg:", R.m_nTrack);
+            for (std::size_t k = 0; k < R.m_TrackErr.size(); ++k) std::printf(" %zu:%d%c %.1f", k, G.m_Joints[k].m_Bone, "NWRS"[std::min(3, int(G.m_Joints[k].m_Adapter.m_Type))], std::sqrt(R.m_TrackErr[k] / R.m_nTrack) * 57.29578);
             std::printf("%c", 10); std::fflush(stdout);
         }
-        return float(std::sqrt(Sum / double(Cur.size()))) * 57.29578f;
+        return Out;
     }
 
     xanimation::rigid RagdollRootBody( const ragdoll& R, float Alpha ) noexcept

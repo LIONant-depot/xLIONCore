@@ -69,8 +69,33 @@ namespace xlioncore::physics
         b3BodyId                    m_PullAnchor = b3_nullBodyId;   // the editor's hand (PullRagdollBody): a static anchor and a motor joint to the grabbed body
         b3JointId                   m_PullJoint  = b3_nullJointId;
         int                         m_PullBody   = -1;
-        std::vector<double>         m_TrackErr;                     // TrackRagdoll's per-body squared error sum (rad^2) and its calls (the trace)
+        std::vector<double>         m_TrackErr;                     // per-joint squared error sum (rad^2) and the steps measured (the trace)
         int                         m_nTrack     = 0;
+        std::vector<xanimation::rigid> m_TrackTarget;               // the body frames TrackRagdoll last aimed at (the steps that follow pull toward them)
+        double                      m_StepSumJ = 0, m_StepSumW = 0; // since the last TrackRagdoll: squared errors of the steps (rad^2), averaged over joints / bodies
+        int                         m_StepN    = 0;
+        int                         m_TraceAt  = 0;
+
+        // After a step (the bodies captured): how far they are from the target that step pulled toward, per joint (the relative rotation of its
+        // two solver frames, as test_ragdoll_tracking) and per body in the world (errors add down a limb)
+        void MeasureTracking(void) noexcept
+        {
+            const auto& Now = m_Runtime.m_Cur;
+            if (m_TrackTarget.size() != Now.size() || Now.empty() || m_Graph.m_Joints.empty()) return;
+            const auto Angle = [](const xmath::fquat& A, const xmath::fquat& B) noexcept { return 2 * std::acos(std::min(1.0f, std::abs(A.Dot(B)))); };
+            double W = 0, J = 0;
+            for (std::size_t i = 0; i < Now.size(); ++i) { const float e = Angle(Now[i].m_Q, m_TrackTarget[i].m_Q); W += double(e) * e; }
+            if (m_TrackErr.size() != m_Graph.m_Joints.size()) m_TrackErr.assign(m_Graph.m_Joints.size(), 0.0);
+            for (std::size_t j = 0; j < m_Graph.m_Joints.size(); ++j)
+            {
+                const auto& Jt = m_Graph.m_Joints[j];
+                const auto a = std::size_t(Jt.m_BodyA), b = std::size_t(Jt.m_BodyB);
+                const float e = Angle((Now[a] * Jt.m_FrameA).m_Q.ConjugateCopy() * (Now[b] * Jt.m_FrameB).m_Q
+                                    , (m_TrackTarget[a] * Jt.m_FrameA).m_Q.ConjugateCopy() * (m_TrackTarget[b] * Jt.m_FrameB).m_Q);
+                J += double(e) * e; m_TrackErr[j] += double(e) * e;
+            }
+            m_StepSumW += W / double(Now.size()); m_StepSumJ += J / double(m_Graph.m_Joints.size()); ++m_StepN; ++m_nTrack;
+        }
     };
 
     struct system : xecs::system::instance
@@ -435,7 +460,7 @@ namespace xlioncore::physics
                 });
 
                 m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
-                for (auto& p : m_Ragdolls) xanimation::CaptureRagdoll(p->m_Runtime);
+                for (auto& p : m_Ragdolls) { xanimation::CaptureRagdoll(p->m_Runtime); p->MeasureTracking(); }
                 SendSensorEvents();
                 RunConnector(1);
             }

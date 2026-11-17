@@ -9,6 +9,8 @@
 #include "xlioncore_physics_events.h"
 #include <cstdint>
 #include <vector>
+#include <array>
+#include <unordered_map>
 
 namespace xlioncore::physics
 {
@@ -31,7 +33,7 @@ namespace xlioncore::physics
     // stand along the shape's local Y, which m_LocalRotation then orients.
     struct shape_params
     {
-        enum class kind : std::uint8_t { BOX, SPHERE, CAPSULE, CYLINDER };
+        enum class kind : std::uint8_t { BOX, SPHERE, CAPSULE, CYLINDER, MESH };
 
         kind            m_Kind              = kind::BOX;
         xmath::fvec3    m_HalfExtents       = xmath::fvec3::fromOne() * 0.5f;
@@ -47,6 +49,8 @@ namespace xlioncore::physics
         std::int32_t    m_GroupIndex        = 0;
         bool            m_IsSensor          = false;
         bool            m_ContactEvents     = false;    // report the touches and the hits of this shape (a touch is reported when either of the two shapes asks)
+        const b3MeshData* m_pMesh           = nullptr;  // MESH: the collision mesh (backend::Mesh), scaled by m_MeshScale
+        xmath::fvec3    m_MeshScale         = xmath::fvec3::fromOne();
     };
 
     class backend
@@ -84,13 +88,18 @@ namespace xlioncore::physics
         // are dropped.
         void         DrainContactEvents ( std::vector<contact_touch>& Begin, std::vector<contact_touch>& End, std::vector<contact_hit>& Hit ) const noexcept;
         b3WorldId    World              ( void ) const noexcept { return m_World; }     // the ragdolls (xlioncore_ragdoll_api.h) make their bodies in it
-        b3BodyId     Ground             ( void ) noexcept;      // a static body at the origin: what a joint to the world holds on to (made on first use)
+        b3BodyId     Ground             ( void ) noexcept;
+        // The collision mesh of Key (a geometry's instance guid): made from these triangles (object space, 3 indices each) on first use, then
+        // shared; freed after the world (its shapes hold it). Null: no triangles, or Box3D refused them.
+        const b3MeshData* Mesh          ( std::uint64_t Key, const std::vector<std::array<float, 3>>& Pos, const std::vector<std::uint32_t>& Tri ) noexcept;
+        bool         HasMesh            ( std::uint64_t Key ) const noexcept { return m_Meshes.find(Key) != m_Meshes.end(); }      // a static body at the origin: what a joint to the world holds on to (made on first use)
 
         int          m_SubSteps = 4;    // Box3D sub-steps a Step: raised while ragdolls are active (their joints need 16 at a fall's impact)
 
     private:
         b3WorldId m_World;
         b3BodyId  m_Ground = b3_nullBodyId;
+        std::unordered_map<std::uint64_t, b3MeshData*> m_Meshes;
     };
 }
 

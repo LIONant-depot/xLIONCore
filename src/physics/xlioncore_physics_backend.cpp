@@ -45,6 +45,24 @@ namespace xlioncore::physics
     backend::~backend(void) noexcept
     {
         b3DestroyWorld(m_World);
+        for (auto& [Key, p] : m_Meshes) if (p) b3DestroyMesh(p);      // (after the world: its mesh shapes held them)
+    }
+
+    const b3MeshData* backend::Mesh(std::uint64_t Key, const std::vector<std::array<float, 3>>& Pos, const std::vector<std::uint32_t>& Tri) noexcept
+    {
+        if (auto It = m_Meshes.find(Key); It != m_Meshes.end()) return It->second;
+        b3MeshData* p = nullptr;
+        if (Pos.size() >= 3 && Tri.size() >= 3)
+        {
+            std::vector<b3Vec3> V(Pos.size()); for (std::size_t i = 0; i < Pos.size(); ++i) V[i] = { Pos[i][0], Pos[i][1], Pos[i][2] };
+            std::vector<std::int32_t> I(Tri.begin(), Tri.end());
+            b3MeshDef Def{};
+            Def.vertices = V.data(); Def.indices = I.data(); Def.vertexCount = int(V.size()); Def.triangleCount = int(I.size() / 3);
+            Def.identifyEdges = true;       // (smooth sliding over shared edges: a ball rolling across triangles)
+            p = b3CreateMesh(&Def, nullptr, 0);
+        }
+        m_Meshes[Key] = p;
+        return p;
     }
 
     b3BodyId backend::CreateBody(const body_create_params& Params) noexcept
@@ -113,6 +131,13 @@ namespace xlioncore::physics
                                    , { Local.p.x + Half.x, Local.p.y + Half.y, Local.p.z + Half.z }
                                    , Params.m_Radius };
             b3CreateCapsuleShape(BodyId, &ShapeDef, &Capsule);
+            break;
+        }
+        case shape_params::kind::MESH:
+        {
+            if (Params.m_pMesh == nullptr) break;
+            const auto& S = Params.m_MeshScale;
+            b3CreateMeshShape(BodyId, &ShapeDef, Params.m_pMesh, { S.m_X, S.m_Y, S.m_Z });
             break;
         }
         case shape_params::kind::CYLINDER:

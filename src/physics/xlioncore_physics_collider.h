@@ -242,6 +242,48 @@ namespace xlioncore::physics
     XSCRIPT_REGISTER_COMPONENT(physics_collider_cylinder, "Physics", 28)
 
     //----------------------------------------------------------------------------------------------
+    // Mesh (plan 13.3): a Static Geom's LOD 0 triangles as a Box3D triangle mesh (a street, a kerb, a ramp), scaled by Transform.Scale.
+    // Box3D makes contacts against a mesh on STATIC bodies only: on a moving body it is left out, and said so. One collision mesh per
+    // geometry and scale-free, shared by every body that uses it (made on first use, freed with the world).
+    //----------------------------------------------------------------------------------------------
+    inline constexpr auto geom_static_type_guid_v = xresource::type_guid(xresource::guid_generator::Instance64FromString("GeomStatic"));    // (LIONRender's, the same)
+    using geom_static_ref = xresource::def_guid<geom_static_type_guid_v>;
+
+    struct collider_mesh_shape
+    {
+        geom_static_ref m_Geom            = {};
+        material::ref   m_Material        = {};
+        bool            m_ContactEvents   = false;
+
+        XPROPERTY_DEF
+        ( "ColliderMesh", collider_mesh_shape
+        , obj_member<"Geom",     &collider_mesh_shape::m_Geom, member_help<"The Static Geom whose triangles are the collider (its LOD 0), usually the same as the entity's Mesh">>
+        , obj_member<"Material", &collider_mesh_shape::m_Material>
+        , obj_member<"ContactEvents", &collider_mesh_shape::m_ContactEvents>
+        )
+    };
+    XPROPERTY_REG(collider_mesh_shape)
+
+    struct physics_collider_mesh
+    {
+        constexpr static auto typedef_v = xecs::component::type::data
+        { .m_Guid     = xecs::component::type::guid{ "xlioncore::physics::physics_collider_mesh" }
+        , .m_pName    = "PhysicsColliderMesh"
+        , .m_bBuilder = true
+        };
+
+        xcontainer::small_vector<collider_mesh_shape, 1> m_Meshes;
+
+        physics_collider_mesh( void ) noexcept { m_Meshes.resize(1); }
+
+        XPROPERTY_DEF
+        ( "PhysicsColliderMesh", physics_collider_mesh
+        , obj_member<"Meshes", &physics_collider_mesh::m_Meshes>
+        )
+    };
+    XSCRIPT_REGISTER_COMPONENT(physics_collider_mesh, "Physics", 29)
+
+    //----------------------------------------------------------------------------------------------
     // How Transform.Scale sizes each shape - one definition shared by the physics builder and the
     // editor's collider tools, so what you see while editing is exactly what Box3D gets.
     //----------------------------------------------------------------------------------------------

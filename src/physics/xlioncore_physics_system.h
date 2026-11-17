@@ -19,6 +19,8 @@
 #include "../transform/xlioncore_transform.h"
 #include "../tags/xlioncore_tags.h"
 #include "../game/xlioncore_game.h"
+#include "../resources/xlioncore_resources_api.h"
+#include "plugins/xgeom_static.plugin/source/xgeom_static.h"
 #include "dependencies/xAnimation/source/adapters/xanimation_ragdoll_runtime.h"
 #include <algorithm>
 #include <memory>
@@ -530,6 +532,7 @@ namespace xlioncore::physics
                        , const physics_collider_sphere*    pSpheres
                        , const physics_collider_capsule*   pCapsules
                        , const physics_collider_cylinder*  pCylinders
+                       , const physics_collider_mesh*      pMeshes
                        , const physics_dynamics*           pDyn ) noexcept
         {
             auto&            Physics  = getSystem<system>();
@@ -586,6 +589,42 @@ namespace xlioncore::physics
                     S.m_HalfHeight = Size.m_HalfHeight;
                 }
 
+            // Meshes (plan 13.3): the geometry's LOD 0 triangles, one collision mesh per geometry shared by every body; Box3D collides with a mesh
+            // only on a static body
+            if( pMeshes )
+                for( auto& Mesh : pMeshes->m_Meshes )
+                {
+                    if( Type != b3_staticBody )
+                    {
+                        std::printf("[Physics] WARNING: entity 0x%llX: a mesh collider only collides on a static body (add the Static tag) - left out\n", static_cast<unsigned long long>(Entity.m_Value));
+                        std::fflush(stdout);
+                        continue;
+                    }
+                    const std::uint64_t Key = Mesh.m_Geom.m_Instance.m_Value;
+                    const b3MeshData* pMesh = nullptr;
+                    if( Key && !Physics.m_Backend.HasMesh(Key) )
+                    {
+                        auto* pGeom = static_cast<const xgeom_static::geom*>(xlioncore::resources::GetResource(geom_static_type_guid_v.m_Value, Key));
+                        if( pGeom )
+                        {
+                            std::vector<std::array<float, 3>> Pos; std::vector<std::uint32_t> Tri;
+                            xgeom_static::LOD0Triangles(*pGeom, Pos, Tri);
+                            pMesh = Physics.m_Backend.Mesh(Key, Pos, Tri);
+                            std::printf("[Physics] mesh collider: geometry 0x%llX, %zu vertices, %zu triangles%s\n", static_cast<unsigned long long>(Key), Pos.size(), Tri.size() / 3, pMesh ? "" : " - REFUSED (no triangles)");
+                            std::fflush(stdout);
+                        }
+                    }
+                    else if( Key ) pMesh = Physics.m_Backend.Mesh(Key, {}, {});
+                    if( pMesh == nullptr )
+                    {
+                        std::printf("[Physics] WARNING: entity 0x%llX: its mesh collider's geometry is %s - left out\n", static_cast<unsigned long long>(Entity.m_Value), Key ? "not loaded or has no triangles" : "not set");
+                        std::fflush(stdout);
+                        continue;
+                    }
+                    auto& S = Add( shape_params::kind::MESH, Mesh.m_Material, false, Mesh.m_ContactEvents, xmath::fvec3{}, xmath::fquat::fromIdentity() );
+                    S.m_pMesh = pMesh; S.m_MeshScale = T.m_Scale;
+                }
+
             // A shape with no extent along some axis (a 0 in the Transform's Scale or in the collider's own size) touches nothing: a dynamic body made only
             // of such shapes falls through the ground forever (seen with a prefab whose root was saved with Scale 0,0,0). Such shapes are left out, and said
             // so; a body left without shapes is not created at all (the same as no collider, below).
@@ -599,6 +638,7 @@ namespace xlioncore::physics
                     case shape_params::kind::SPHERE:   return !( S.m_Radius > kMinExtent );
                     case shape_params::kind::CAPSULE:  return !( S.m_Radius > kMinExtent );
                     case shape_params::kind::CYLINDER: return !( S.m_Radius > kMinExtent && S.m_HalfHeight > kMinExtent );
+                    case shape_params::kind::MESH:     return !( std::min({ std::abs(S.m_MeshScale.m_X), std::abs(S.m_MeshScale.m_Y), std::abs(S.m_MeshScale.m_Z) }) > kMinExtent );
                     default:                           return false;
                     }
                 };

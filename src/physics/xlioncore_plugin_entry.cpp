@@ -310,7 +310,7 @@ namespace xlioncore::physics
                 b3ShapeId Sh[8]; const int n = b3Body_GetShapes(Id, Sh, 8);
                 for (int k = 0; k < n; ++k) { auto F = b3Shape_GetFilter(Sh[k]); F.groupIndex = -7; b3Shape_SetFilter(Sh[k], F, true); }
             }
-        xanimation::SetTrackingTargets(Box, G, Cur, P.m_Gain, P.m_Damping, Prev, Dt, P.m_FeedForward); R.m_TrackPrev = Prev; R.m_TrackGain = P.m_Gain; R.m_TrackDamping = P.m_Damping; R.m_TrackFF = P.m_FeedForward; R.m_TrackDt = Dt; R.m_bTrackSupported = P.m_bSupported;
+        xanimation::SetTrackingTargets(Box, G, Cur, P.m_Gain, P.m_Damping, Prev, Dt, P.m_FeedForward, 9.81f, P.m_JointTone); R.m_TrackTone.assign(P.m_JointTone.begin(), P.m_JointTone.end()); R.m_TrackPrev = Prev; R.m_TrackGain = P.m_Gain; R.m_TrackDamping = P.m_Damping; R.m_TrackFF = P.m_FeedForward; R.m_TrackDt = Dt; R.m_bTrackSupported = P.m_bSupported;
         R.m_TrackTarget = Cur;              // (the steps until the next call pull toward these: ragdoll::MeasureTracking measures each)
         // What the steps since the last call measured: per joint (returned) and per body in the world; -1 when no step ran since
         float Out = -1;

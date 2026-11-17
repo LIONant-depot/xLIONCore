@@ -87,6 +87,7 @@ namespace xlioncore::physics
         xanimation::ragdoll_step    m_StepRec;                      // the step being recorded (targets and hits gathered before it, frames after)
         std::vector<xanimation::rigid> m_TrackPrev;                 // TrackRagdoll's last call: the target one step back and its settings
         float                       m_TrackGain = 0, m_TrackDamping = 1, m_TrackFF = 0, m_TrackDt = 0;
+        std::vector<float>          m_TrackTone;                    // KD4b: TrackRagdoll's last per-joint tone (recorded with each step)
         bool                        m_bTrackSupported = false;
         int                         m_nSteps = 0;
 
@@ -116,7 +117,7 @@ namespace xlioncore::physics
             auto& S = m_StepRec;
             S.m_Step = m_nSteps;
             S.m_bTracking = m_TrackTarget.empty() ? 0 : 1; S.m_bSupported = m_bTrackSupported ? 1 : 0;
-            S.m_Gain = m_TrackGain; S.m_Damping = m_TrackDamping; S.m_FeedForward = m_TrackFF; S.m_TrackDt = m_TrackDt;
+            S.m_Gain = m_TrackGain; S.m_Damping = m_TrackDamping; S.m_FeedForward = m_TrackFF; S.m_TrackDt = m_TrackDt; S.m_Tone = m_TrackTone;
             S.m_Target = m_TrackTarget; S.m_TargetPrev = m_TrackPrev;
             if (S.m_TargetPrev.size() != S.m_Target.size()) S.m_TargetPrev = S.m_Target;
             const auto& B = m_Runtime.m_Box.m_Bodies;

@@ -172,6 +172,21 @@ namespace xlioncore
 
     private:
         std::chrono::steady_clock::time_point m_LastTick{};
+
+    public:
+        // The player's input this frame (K4: a stick-driven character), written by whoever hosts the game before Run(): the editor's Play viewport
+        // while it has the focus (keyboard WASD/arrows, Shift to run, a gamepad), a game's window. The left stick also comes turned into the world's
+        // XZ by the host's camera (camera-relative movement: the game has no camera of its own yet). Inactive: nobody is playing (all zero).
+        struct input
+        {
+            bool        m_bActive    = false;
+            float       m_Stick[2]   = {};          // left stick / WASD, -1..1 (x right, y forward)
+            float       m_MoveWorld[2] = {};        // the same, in the world's X and Z (turned by the host's camera)
+            float       m_Look[2]    = {};          // right stick
+            std::uint32_t m_Buttons  = 0;           // input::RUN, ...
+            static constexpr std::uint32_t RUN = 1u << 0, JUMP = 1u << 1, ACTION = 1u << 2;
+        };
+        input m_Input;                              // (appended last: modules built before it keep the members above at their places)
     };
 }
 

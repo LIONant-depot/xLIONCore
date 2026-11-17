@@ -8,6 +8,7 @@
 #include "xlioncore_physics_api.h"
 #include "xlioncore_ragdoll_api.h"
 #include "../transform/xlioncore_transform.h"
+#include "../transform/xlioncore_locomotion.h"           // (2026-11-17: the game <-> animation meeting point)
 #include "../tags/xlioncore_tags.h"
 #include "../demo/xlioncore_demo_share.h"
 #include "../demo/xlioncore_demo_systems.h"

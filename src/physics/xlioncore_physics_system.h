@@ -69,6 +69,8 @@ namespace xlioncore::physics
         b3BodyId                    m_PullAnchor = b3_nullBodyId;   // the editor's hand (PullRagdollBody): a static anchor and a motor joint to the grabbed body
         b3JointId                   m_PullJoint  = b3_nullJointId;
         int                         m_PullBody   = -1;
+        std::vector<double>         m_TrackErr;                     // TrackRagdoll's per-body squared error sum (rad^2) and its calls (the trace)
+        int                         m_nTrack     = 0;
     };
 
     struct system : xecs::system::instance
@@ -270,6 +272,47 @@ namespace xlioncore::physics
             }();
             return s_bTrace;
         }
+        // Makes the joints whose two bodies exist and that have none yet (or lost theirs with a body), and remakes the ones whose authored values
+        // changed (see physics_joint). A connected body that is not there (yet) leaves the joint unmade: never silently a joint to the world.
+        // ponytail: a joint component removed while its body lives keeps its Box3D joint until the body goes; add a notify if that is ever needed.
+        void SyncJoints(void) noexcept
+        {
+            xecs::query::instance Query;
+            Query.m_Must.AddFromComponents< xlioncore::transform, physics_body, physics_joint >();
+            auto& GameMgr = getGameMgr();
+            auto  Set     = Search(Query);
+            Foreach(Set, [&](const xecs::component::entity& Entity, const xlioncore::transform& T, const physics_body& Body, physics_joint& J) noexcept
+            {
+                if (Entity.isZombie() || B3_IS_NULL(Body.m_BodyId)) return;
+                const bool bAlive = B3_IS_NON_NULL(J.m_JointId) && b3Joint_IsValid(J.m_JointId);
+                const auto Hash   = J.Hash();
+                if (bAlive && Hash == J.m_BuiltHash) return;
+                if (bAlive) { b3DestroyJoint(J.m_JointId, true); J.m_JointId = b3_nullJointId; }
+
+                b3BodyId Other = b3_nullBodyId;
+                if (J.m_ConnectedBody.isValid())
+                {
+                    if (!GameMgr.m_ComponentMgr.isEntityValid(J.m_ConnectedBody))
+                    {
+                        if (J.m_BuiltHash != Hash) std::printf("[Physics] joint of entity 0x%llX waits: its ConnectedBody 0x%llX is not an entity of this world\n", static_cast<unsigned long long>(Entity.m_Value), static_cast<unsigned long long>(J.m_ConnectedBody.m_Value)), std::fflush(stdout);
+                        J.m_BuiltHash = Hash;       // (said once)
+                        return;
+                    }
+                    const auto* pOther = GetComponentPtr<physics_body>(GameMgr, J.m_ConnectedBody);
+                    if (!pOther || B3_IS_NULL(pOther->m_BodyId) || !b3Body_IsValid(pOther->m_BodyId)) return;
+                    Other = pOther->m_BodyId;
+                }
+                else Other = m_Backend.Ground();
+
+                J.m_JointId   = CreateJoint(m_Backend.World(), J, Body.m_BodyId, Other, T.m_Scale);
+                J.m_BuiltHash = Hash;
+                std::printf("[Physics] joint made: entity 0x%llX kind %d to %s0x%llX\n", static_cast<unsigned long long>(Entity.m_Value), int(J.m_Kind)
+                    , J.m_ConnectedBody.isValid() ? "entity " : "the world ", static_cast<unsigned long long>(J.m_ConnectedBody.m_Value));
+                std::fflush(stdout);
+                m_Backend.SetAwake(Body.m_BodyId, true);
+            });
+        }
+
         void OnUpdate(void) noexcept
         {
             static int s_Tick = 0;
@@ -295,6 +338,7 @@ namespace xlioncore::physics
             // connected to this one run around each of them (Before Step: they push on the bodies, After Step: they read what happened).
             const auto* pGame = game::From(getGameMgr());
             const int   nSteps = pGame ? pGame->m_Time.m_FixedSteps : 0;
+            if (nSteps > 0) SyncJoints();
             for (int Step = 0; Step < nSteps; ++Step)
             {
                 RunConnector(0);

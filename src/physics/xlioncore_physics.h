@@ -22,6 +22,7 @@
 #include "xlioncore_physics_material.h"
 #include "xlioncore_physics_collider.h"
 #include "xlioncore_physics_events.h"
+#include "xlioncore_physics_joint.h"
 #include "plugins/xscript_module.plugin/source/Runtime/xscript_registration.h"
 #include <box3d/box3d.h>
 #include <cstdint>

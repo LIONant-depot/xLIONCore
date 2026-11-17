@@ -1,4 +1,5 @@
 #include "xlioncore_physics_backend.h"
+#include "xlioncore_physics_tasks.h"
 #include <cstring>
 #include <array>
 #include <algorithm>
@@ -37,6 +38,7 @@ namespace xlioncore::physics
     backend::backend(void) noexcept
     {
         b3WorldDef WorldDef = b3DefaultWorldDef();
+        tasks::Attach(WorldDef);        // the solver on this module's xscheduler workers (plan 13.5)
         m_World = b3CreateWorld(&WorldDef);
     }
 
@@ -128,6 +130,17 @@ namespace xlioncore::physics
             break;
         }
         }
+    }
+
+    b3BodyId backend::Ground(void) noexcept
+    {
+        if (B3_IS_NULL(m_Ground) || !b3Body_IsValid(m_Ground))
+        {
+            b3BodyDef Def = b3DefaultBodyDef();
+            Def.type = b3_staticBody;
+            m_Ground = b3CreateBody(m_World, &Def);
+        }
+        return m_Ground;
     }
 
     void backend::Step(float FixedDeltaTime) noexcept

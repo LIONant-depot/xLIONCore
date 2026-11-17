@@ -48,6 +48,7 @@ void XecsPlugin_RegisterSystems(xecs::game_mgr::instance& GameMgr) noexcept
         , xlioncore::physics::physics_collider_cylinder
         , xlioncore::physics::physics_dynamics
         , xlioncore::physics::physics_body
+        , xlioncore::physics::physics_joint
         , xlioncore::demo_share
         >();
 
@@ -238,6 +239,45 @@ namespace xlioncore::physics
             Out.m_nAwake += b3Body_IsAwake(Id) ? 1 : 0; ++Out.m_nBodies;
         }
         Out.m_ComY = Out.m_Mass > 0 ? float(MY / Out.m_Mass) : 0.0f;
+    }
+
+    float TrackRagdoll( ragdoll& R, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur, float Dt, const ragdoll_tracking& P ) noexcept
+    {
+        const auto& G = R.m_Graph; auto& Box = R.m_Runtime.m_Box;
+        if (Box.m_Bodies.empty() || G.m_Bodies.size() != Box.m_Bodies.size() || Dt <= 0) return -1;
+        std::vector<xanimation::rigid> Cur(G.m_Bodies.size()), Prev(G.m_Bodies.size());
+        for (std::size_t i = 0; i < G.m_Bodies.size(); ++i)
+        {
+            const auto b = std::size_t(G.m_Bodies[i].m_Bone);
+            if (b >= BoneCur.size() || b >= BonePrev.size()) return -1;
+            Cur[i]  = xanimation::BodyFromBone(BoneCur[b],  G.m_Bodies[i]);
+            Prev[i] = xanimation::BodyFromBone(BonePrev[b], G.m_Bodies[i]);
+        }
+        if (P.m_bSupported)
+        {
+            const auto Root = Box.m_Bodies[0];
+            if (b3Body_GetType(Root) != b3_kinematicBody) b3Body_SetType(Root, b3_kinematicBody);
+            b3Body_SetTargetTransform(Root, b3MakeWorldTransform(xanimation::ToB3(Cur[0])), Dt, true);
+        }
+        xanimation::SetTrackingTargets(Box, G, Cur, P.m_Gain, P.m_Damping, Prev, Dt, P.m_FeedForward);
+        double Sum = 0;
+        for (std::size_t i = 0; i < Cur.size(); ++i)
+        {
+            const auto Q = xanimation::FromB3(b3Body_GetRotation(Box.m_Bodies[i]));
+            const float a = 2 * std::acos(std::min(1.0f, std::abs(Q.Dot(Prev[i].m_Q))));     // (the bodies now are where the last call's target, this call's Prev, pulled them)
+            Sum += double(a) * a;
+            if (R.m_TrackErr.size() != Cur.size()) R.m_TrackErr.assign(Cur.size(), 0.0);
+            R.m_TrackErr[i] += double(a) * a;
+        }
+        // XLION_RAGDOLL_TRACK_TRACE=1: each body's rms (deg) and its bone, every 240 calls (a narrowing switch)
+        static const bool s_bTrace = [] { char* p = nullptr; std::size_t n = 0; const bool b = _dupenv_s(&p, &n, "XLION_RAGDOLL_TRACK_TRACE") == 0 && p && *p && *p != '0'; std::free(p); return b; }();
+        if (s_bTrace && ++R.m_nTrack % 240 == 0)
+        {
+            std::printf("[Ragdoll] track trace (%d calls), hips target %.2f %.2f %.2f, body:bone rms deg:", R.m_nTrack, Cur[0].m_P.m_X, Cur[0].m_P.m_Y, Cur[0].m_P.m_Z);
+            for (std::size_t i = 0; i < Cur.size(); ++i) std::printf(" %zu:%d %.1f", i, G.m_Bodies[i].m_Bone, std::sqrt(R.m_TrackErr[i] / R.m_nTrack) * 57.29578);
+            std::printf("%c", 10); std::fflush(stdout);
+        }
+        return float(std::sqrt(Sum / double(Cur.size()))) * 57.29578f;
     }
 
     xanimation::rigid RagdollRootBody( const ragdoll& R, float Alpha ) noexcept

@@ -43,6 +43,20 @@ namespace xlioncore::physics
     XLIONCORE_API void DeactivateRagdoll( xecs::game_mgr::instance& GameMgr, ragdoll* pRagdoll ) noexcept;
     // Every bone's world rigid frame, Alpha between the last two captures (the game's m_FixedInterpolate); Animated: the animated pose's world
     // rigid frames (the bones the ragdoll does not own keep theirs relative to their parent)
+    // Supported tracking (plan R1, ladder step 2): every joint pulls toward the animated pose (xanimation::SetTrackingTargets: scale-free gain,
+    // damping ratio, the feed-forward motor of the animation's own joint velocity); Supported: the root body turns kinematic and follows the
+    // animated root (the character is held up, not balanced: balance is R2). BonePrev, BoneCur: the animated world rigid bone frames one fixed
+    // step back and now (as ActivateRagdoll's). Call every frame while it tracks; once called, the joints track until the ragdoll is deactivated.
+    struct ragdoll_tracking
+    {
+        float   m_Gain        = 30.0f;  // spring stiffness in units of the joint's gravity load (k = Gain M g l per radian)
+        float   m_Damping     = 1.0f;   // damping ratio on the chain's own inertia
+        float   m_FeedForward = 0.3f;   // the velocity motor's torque cap, in spring torques per radian (0: spring only)
+        bool    m_bSupported  = true;
+    };
+    // Returns how far the bodies are from the animation at their time (the bodies now vs BonePrev): the rms of each body's rotation from its target, degrees.
+    XLIONCORE_API float TrackRagdoll( ragdoll& Ragdoll, std::span<const xanimation::rigid> BonePrev, std::span<const xanimation::rigid> BoneCur, float Dt, const ragdoll_tracking& Params ) noexcept;
+
     XLIONCORE_API void PoseRagdoll( const ragdoll& Ragdoll, const xanimation::skeleton_view& Skel, float Alpha, std::span<const xanimation::rigid> Animated, std::span<xanimation::rigid> Out ) noexcept;
     XLIONCORE_API void RagdollStats( const ragdoll& Ragdoll, ragdoll_stats& Out ) noexcept;
     XLIONCORE_API xanimation::rigid RagdollRootBody( const ragdoll& Ragdoll, float Alpha ) noexcept;      // the root body's (the hips') world frame

@@ -66,7 +66,8 @@ namespace xlioncore::physics
     // The solid hits (contact hit events: shapes with ContactEvents on, faster than 1 m/s) of the steps since the last call, in step order: the
     // two entities, where, the normal (from A to B), the approach speed, and an id unique in this game world (an interaction event id, R3b').
     // Returns how many there were (writes up to MaxOut); the rest are dropped with this call.
-    struct impact { std::uint64_t m_Id = 0, m_A = 0, m_B = 0; xmath::fvec3 m_Point{}, m_Normal{}; float m_Speed = 0; };
+    // m_MassA, m_MassB: the two bodies' masses (0: not dynamic - a wall, a kinematic mover)
+    struct impact { std::uint64_t m_Id = 0, m_A = 0, m_B = 0; xmath::fvec3 m_Point{}, m_Normal{}; float m_Speed = 0, m_MassA = 0, m_MassB = 0; };
     XLIONCORE_API int TakeImpacts( xecs::game_mgr::instance& GameMgr, impact* pOut, int MaxOut ) noexcept;
 
     // A character's capsule moved through the world (plan 13.4; Box3D's mover: b3World_CollideMover + b3SolvePlanes + b3World_CastMover,

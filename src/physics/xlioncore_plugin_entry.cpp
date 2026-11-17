@@ -126,7 +126,8 @@ namespace xlioncore::physics
         {
             const auto& H = pSystem->m_HitsUnread[std::size_t(i)];
             const std::uint64_t Id = ++pSystem->m_nHits;
-            if (pOut && i < MaxOut) pOut[i] = { Id, H.m_A.m_Value, H.m_B.m_Value, xmath::fvec3(float(H.m_Point.x), float(H.m_Point.y), float(H.m_Point.z)), xmath::fvec3(H.m_Normal.x, H.m_Normal.y, H.m_Normal.z), H.m_ApproachSpeed };
+            const auto Mass = [](b3ShapeId S) noexcept { if (!b3Shape_IsValid(S)) return 0.0f; const auto B = b3Shape_GetBody(S); return b3Body_GetType(B) == b3_dynamicBody ? b3Body_GetMass(B) : 0.0f; };
+            if (pOut && i < MaxOut) pOut[i] = { Id, H.m_A.m_Value, H.m_B.m_Value, xmath::fvec3(float(H.m_Point.x), float(H.m_Point.y), float(H.m_Point.z)), xmath::fvec3(H.m_Normal.x, H.m_Normal.y, H.m_Normal.z), H.m_ApproachSpeed, Mass(H.m_ShapeA), Mass(H.m_ShapeB) };
         }
         pSystem->m_HitsUnread.clear();
         return n;

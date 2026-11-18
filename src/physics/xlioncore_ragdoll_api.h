@@ -54,6 +54,8 @@ namespace xlioncore::physics
         float   m_FeedForward = 0.3f;   // the velocity motor's torque cap, in spring torques per radian (0: spring only)
         bool    m_bSupported  = true;
         std::span<const float> m_JointTone;     // KD4b: a stiffness factor per joint of the graph (empty: all 1)
+        float   m_GravityFF   = 0.0f;   // R2 stage 2a: each joint also holds the side away from the feet against gravity (equal and opposite
+                                        // torque pairs before every step; the feet: the two lowest bodies; shares by how near the COM is over each), times this
     };
     // Returns how far the joints were from their targets after each physics step since the last call (-1: no step ran): the rms over the joints of each joint's
     // rotation from its target, degrees (pWorldRms: the same over each body's world rotation, which adds up down a limb).

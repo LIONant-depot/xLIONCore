@@ -89,6 +89,8 @@ namespace xlioncore::physics
         float                       m_TrackGain = 0, m_TrackDamping = 1, m_TrackFF = 0, m_TrackDt = 0;
         std::vector<float>          m_TrackTone;                    // KD4b: TrackRagdoll's last per-joint tone (recorded with each step)
         bool                        m_bTrackSupported = false;
+        float                       m_TrackGravityFF = 0;           // R2 stage 2a (ragdoll_tracking::m_GravityFF), and the feet it roots at
+        int                         m_TrackFeet[2] = { -1, -1 };
         int                         m_nSteps = 0;
 
         ragdoll() = default;
@@ -202,6 +204,26 @@ namespace xlioncore::physics
                     std::fflush(stdout);
                 }
                 p->m_Hits.clear();
+            }
+        }
+
+        // R2 stage 2a: before each step, an unsupported tracked ragdoll's joints hold the side away from its feet against gravity
+        void ApplySupport(void) noexcept
+        {
+            for (auto& p : m_Ragdolls)
+            {
+                auto& R = *p;
+                if (R.m_TrackGravityFF <= 0 || R.m_bTrackSupported || R.m_TrackTarget.empty() || R.m_TrackFeet[0] < 0 || R.m_TrackFeet[1] < 0) continue;
+                const auto& Box = R.m_Runtime.m_Box;
+                xmath::fvec3 Com(0, 0, 0); float M = 0;
+                for (const auto Id : Box.m_Bodies) { const auto c = b3Body_GetWorldCenter(Id); const float m = b3Body_GetMass(Id); Com = Com + xmath::fvec3(float(c.x), float(c.y), float(c.z)) * m; M += m; }
+                if (M <= 0) continue;
+                Com = Com * (1.0f / M);
+                const auto P0 = b3Body_GetWorldCenter(Box.m_Bodies[std::size_t(R.m_TrackFeet[0])]), P1 = b3Body_GetWorldCenter(Box.m_Bodies[std::size_t(R.m_TrackFeet[1])]);
+                const float d0 = std::hypot(Com.m_X - float(P0.x), Com.m_Z - float(P0.z)), d1 = std::hypot(Com.m_X - float(P1.x), Com.m_Z - float(P1.z));
+                const float w0 = d1 / std::max(d0 + d1, 1e-6f);
+                xanimation::ApplyGravityFeedForward(R.m_Runtime.m_Box, R.m_Graph, R.m_TrackFeet[0], R.m_TrackGravityFF * w0);
+                xanimation::ApplyGravityFeedForward(R.m_Runtime.m_Box, R.m_Graph, R.m_TrackFeet[1], R.m_TrackGravityFF * (1 - w0));
             }
         }
 
@@ -540,6 +562,7 @@ namespace xlioncore::physics
                 });
 
                 ApplyHits();
+                ApplySupport();
                 for (auto& p : m_Ragdolls) p->RecordBeforeStep();
                 m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
                 for (auto& p : m_Ragdolls) { xanimation::CaptureRagdoll(p->m_Runtime); p->MeasureTracking(); p->RecordAfterStep(); }

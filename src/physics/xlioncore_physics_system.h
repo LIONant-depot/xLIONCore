@@ -106,13 +106,13 @@ namespace xlioncore::physics
 #if defined(_MSC_VER)
 #pragma warning(suppress: 4996)
 #endif
-            const char* p = std::getenv("XLION_RAGDOLL_DUMP");
+            const char* p = xanimation::Env("XLION_RAGDOLL_DUMP");
             if (p && *p && m_Runtime.m_DumpIndex >= 0 && !m_pStepLog)
             {
 #if defined(_MSC_VER)
 #pragma warning(suppress: 4996)
 #endif
-                m_pStepLog = std::fopen((std::string(p) + std::to_string(m_Runtime.m_DumpIndex) + "_steps.txt").c_str(), "w");
+                m_pStepLog = xanimation::Open((std::string(p) + std::to_string(m_Runtime.m_DumpIndex) + "_steps.txt").c_str(), "w");
             }
         }
 

@@ -310,16 +310,22 @@ namespace xlioncore::physics
                 b3ShapeId Sh[8]; const int n = b3Body_GetShapes(Id, Sh, 8);
                 for (int k = 0; k < n; ++k) { auto F = b3Shape_GetFilter(Sh[k]); F.groupIndex = -7; b3Shape_SetFilter(Sh[k], F, true); }
             }
+        if (P.m_GravityFF > 0 && !P.m_bSupported)         // R2: its balance (xanimation::balancer) changes the targets - a step, level feet
+        {
+            if (!R.m_bBalBegun)
+            {
+                R.m_bBalBegun = true; R.m_Balancer.m_P.m_GravityFF = P.m_GravityFF;
+                R.m_Balancer.Begin(G, Box, R.m_Runtime.m_Cur, Cur);
+                std::printf("[Balance] %s: feet bodies %d and %d\n", R.m_Balancer.Ready() ? "on" : "NOT on (no pelvis above the feet)", R.m_Balancer.Foot(0), R.m_Balancer.Foot(1)); std::fflush(stdout);
+            }
+            R.m_Balancer.Targets(Box, R.m_Runtime.m_Cur, Cur, Dt);
+            if (R.m_Balancer.Steps() != R.m_BalSteps) { R.m_BalSteps = R.m_Balancer.Steps(); std::printf("[Balance] step %d\n", R.m_BalSteps); std::fflush(stdout); }
+            if (R.m_BalPrev.size() != Cur.size()) R.m_BalPrev = Cur;
+            Prev = R.m_BalPrev; R.m_BalPrev = Cur;
+        }
         xanimation::SetTrackingTargets(Box, G, Cur, P.m_Gain, P.m_Damping, Prev, Dt, P.m_FeedForward, 9.81f, P.m_JointTone); R.m_TrackTone.assign(P.m_JointTone.begin(), P.m_JointTone.end()); R.m_TrackPrev = Prev; R.m_TrackGain = P.m_Gain; R.m_TrackDamping = P.m_Damping; R.m_TrackFF = P.m_FeedForward; R.m_TrackDt = Dt; R.m_bTrackSupported = P.m_bSupported;
         R.m_TrackTarget = Cur;              // (the steps until the next call pull toward these: ragdoll::MeasureTracking measures each)
-        R.m_TrackGravityFF = P.m_GravityFF;
-        if (P.m_GravityFF > 0 && R.m_TrackFeet[0] < 0)     // (the feet: the two lowest bodies of the animated pose, once)
-        {
-            for (std::size_t i = 0; i < Cur.size(); ++i)
-                if (R.m_TrackFeet[0] < 0 || Cur[i].m_P.m_Y < Cur[std::size_t(R.m_TrackFeet[0])].m_P.m_Y) { R.m_TrackFeet[1] = R.m_TrackFeet[0]; R.m_TrackFeet[0] = int(i); }
-                else if (R.m_TrackFeet[1] < 0 || Cur[i].m_P.m_Y < Cur[std::size_t(R.m_TrackFeet[1])].m_P.m_Y) R.m_TrackFeet[1] = int(i);
-            std::printf("[Ragdoll] gravity feed-forward x%.2f rooted at bodies %d and %d (the feet)\n", P.m_GravityFF, R.m_TrackFeet[0], R.m_TrackFeet[1]); std::fflush(stdout);
-        }
+        R.m_TrackGravityFF = P.m_bSupported ? 0.0f : P.m_GravityFF;
         // What the steps since the last call measured: per joint (returned) and per body in the world; -1 when no step ran since
         float Out = -1;
         if (R.m_StepN > 0)

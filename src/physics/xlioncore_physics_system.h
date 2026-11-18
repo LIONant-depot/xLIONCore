@@ -212,11 +212,16 @@ namespace xlioncore::physics
         }
 
         // R2 stage 2a: before each step, an unsupported tracked ragdoll's joints hold the side away from its feet against gravity
-        void ApplySupport(void) noexcept
+        // Before every fixed step. Supported tracking (C86): the kinematic root is aimed at the animation's root again each step - TrackRagdoll
+        // runs once a frame and gave it the velocity to reach the target in ONE fixed step, which it kept for every step of the frame: at 2-3
+        // steps a frame (a Debug editor under 30 fps, or a busy PC) it overshot, and the error doubled each frame until the ragdoll exploded
+        void ApplySupport(float Dt) noexcept
         {
             for (auto& p : m_Ragdolls)
             {
                 auto& R = *p;
+                if (R.m_bTrackSupported && !R.m_TrackTarget.empty() && !R.m_Runtime.m_Box.m_Bodies.empty() && Dt > 0)
+                    b3Body_SetTargetTransform(R.m_Runtime.m_Box.m_Bodies[0], b3MakeWorldTransform(xanimation::ToB3(R.m_TrackTarget[0])), Dt, true);
                 if (R.m_TrackGravityFF <= 0 || R.m_bTrackSupported || R.m_TrackTarget.empty() || !R.m_Balancer.Ready()) continue;
                 R.m_Balancer.BeforeStep(R.m_Runtime.m_Box, R.m_Runtime.m_Cur);      // (the feet's pressure centres and the gravity feed-forward)
             }
@@ -557,7 +562,7 @@ namespace xlioncore::physics
                 });
 
                 ApplyHits();
-                ApplySupport();
+                ApplySupport(pGame->m_Time.m_FixedDeltaTime);
                 for (auto& p : m_Ragdolls) p->RecordBeforeStep();
                 m_Backend.Step(pGame->m_Time.m_FixedDeltaTime);
                 for (auto& p : m_Ragdolls) { xanimation::CaptureRagdoll(p->m_Runtime); p->MeasureTracking(); p->RecordAfterStep(); }

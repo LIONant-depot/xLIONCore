@@ -68,6 +68,17 @@ namespace xlioncore::demo
         }
     };
 
+    // C100 (QE 2026-11-19): a contact line names its entities by their scene id (what a test or a person created, e.g. 7E570021), so a test
+    // counts only its own entities' contacts; an entity no scene holds (made at runtime) prints its runtime handle with an "r"
+    struct id_text { char m_S[24]; };
+    inline id_text SceneIdText(xecs::game_mgr::instance& G, xecs::component::entity E) noexcept
+    {
+        id_text T{};
+        for (auto& pScene : G.m_SceneMgr.m_SceneInstances)
+            if (auto It = pScene->m_RuntimeToLocal.find(E.m_Value); It != pScene->m_RuntimeToLocal.end()) { std::snprintf(T.m_S, sizeof(T.m_S), "%llX", static_cast<unsigned long long>(It->second)); return T; }
+        std::snprintf(T.m_S, sizeof(T.m_S), "r%llX", static_cast<unsigned long long>(E.m_Value)); return T;
+    }
+
     // The same for the solid contacts of the shapes with ContactEvents on.
     struct contact_begin_logger : xecs::system::instance
     {
@@ -77,7 +88,7 @@ namespace xlioncore::demo
 
         void OnEvent(const xlioncore::physics::contact_touch& Touch) noexcept
         {
-            std::printf("[System] Contact begin a=%llX b=%llX\n", static_cast<unsigned long long>(Touch.m_A.m_Value), static_cast<unsigned long long>(Touch.m_B.m_Value));
+            std::printf("[System] Contact begin a=%s b=%s\n", SceneIdText(getGameMgr(), Touch.m_A).m_S, SceneIdText(getGameMgr(), Touch.m_B).m_S);
             std::fflush(stdout);
         }
     };
@@ -90,7 +101,7 @@ namespace xlioncore::demo
 
         void OnEvent(const xlioncore::physics::contact_touch& Touch) noexcept
         {
-            std::printf("[System] Contact end a=%llX b=%llX\n", static_cast<unsigned long long>(Touch.m_A.m_Value), static_cast<unsigned long long>(Touch.m_B.m_Value));
+            std::printf("[System] Contact end a=%s b=%s\n", SceneIdText(getGameMgr(), Touch.m_A).m_S, SceneIdText(getGameMgr(), Touch.m_B).m_S);
             std::fflush(stdout);
         }
     };
@@ -103,7 +114,7 @@ namespace xlioncore::demo
 
         void OnEvent(const xlioncore::physics::contact_hit& Hit) noexcept
         {
-            std::printf("[System] Contact hit a=%llX b=%llX speed=%.2f point=%.2f,%.2f,%.2f normal=%.2f,%.2f,%.2f\n", static_cast<unsigned long long>(Hit.m_A.m_Value), static_cast<unsigned long long>(Hit.m_B.m_Value)
+            std::printf("[System] Contact hit a=%s b=%s speed=%.2f point=%.2f,%.2f,%.2f normal=%.2f,%.2f,%.2f\n", SceneIdText(getGameMgr(), Hit.m_A).m_S, SceneIdText(getGameMgr(), Hit.m_B).m_S
                        , Hit.m_ApproachSpeed, static_cast<double>(Hit.m_Point.x), static_cast<double>(Hit.m_Point.y), static_cast<double>(Hit.m_Point.z), Hit.m_Normal.x, Hit.m_Normal.y, Hit.m_Normal.z);
             std::fflush(stdout);
         }

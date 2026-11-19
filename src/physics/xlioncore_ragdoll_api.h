@@ -69,6 +69,12 @@ namespace xlioncore::physics
     // inside it are the same character). Box3D filter joints, gone with the ragdoll. Entity without a body: nothing.
     XLIONCORE_API void RagdollIgnoreEntity( xecs::game_mgr::instance& GameMgr, ragdoll& Ragdoll, std::uint64_t Entity ) noexcept;
 
+    // Hit shapes (ragdoll design v2; R68, Tomas 2026-11-19: boxes shot at an animated character went through it): the ragdoll's bodies made
+    // kinematic and moved to the animated pose every frame (MoveRagdollHitShapes), each body naming Entity, its shapes reporting hits - a box
+    // bounces off an animated character and TakeImpacts names it. A ragdoll made into hit shapes is only that (no tracking, no balance).
+    XLIONCORE_API void MakeRagdollHitShapes( ragdoll& Ragdoll, std::uint64_t Entity ) noexcept;
+    XLIONCORE_API void MoveRagdollHitShapes( ragdoll& Ragdoll, std::span<const xanimation::rigid> BoneCur, float Dt ) noexcept;
+
     XLIONCORE_API void PoseRagdoll( const ragdoll& Ragdoll, const xanimation::skeleton_view& Skel, float Alpha, std::span<const xanimation::rigid> Animated, std::span<xanimation::rigid> Out ) noexcept;
     XLIONCORE_API void RagdollStats( const ragdoll& Ragdoll, ragdoll_stats& Out ) noexcept;
     XLIONCORE_API xanimation::rigid RagdollRootBody( const ragdoll& Ragdoll, float Alpha ) noexcept;      // the root body's (the hips') world frame

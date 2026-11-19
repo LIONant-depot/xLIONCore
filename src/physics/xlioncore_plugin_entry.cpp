@@ -404,6 +404,29 @@ namespace xlioncore::physics
         }
     }
 
+    void MakeRagdollHitShapes( ragdoll& R, std::uint64_t Entity ) noexcept
+    {
+        for (auto B : R.m_Runtime.m_Box.m_Bodies)
+        {
+            if (!b3Body_IsValid(B)) continue;
+            b3Body_SetType(B, b3_kinematicBody); b3Body_SetLinearVelocity(B, b3Vec3_zero); b3Body_SetAngularVelocity(B, b3Vec3_zero);
+            b3Body_SetUserData(B, reinterpret_cast<void*>(static_cast<std::uintptr_t>(Entity)));
+            b3Body_EnableHitEvents(B, true);
+        }
+    }
+
+    void MoveRagdollHitShapes( ragdoll& R, std::span<const xanimation::rigid> BoneCur, float Dt ) noexcept
+    {
+        const auto& G = R.m_Graph; auto& Box = R.m_Runtime.m_Box;
+        if (Dt <= 0 || G.m_Bodies.size() != Box.m_Bodies.size()) return;
+        for (std::size_t i = 0; i < G.m_Bodies.size(); ++i)
+        {
+            const auto b = std::size_t(G.m_Bodies[i].m_Bone);
+            if (b >= BoneCur.size() || !b3Body_IsValid(Box.m_Bodies[i])) continue;
+            b3Body_SetTargetTransform(Box.m_Bodies[i], b3MakeWorldTransform(xanimation::ToB3(xanimation::BodyFromBone(BoneCur[b], G.m_Bodies[i]))), Dt, true);
+        }
+    }
+
     void HitRagdoll( xecs::game_mgr::instance& /*GameMgr*/, ragdoll& R, std::uint64_t EventId, const xmath::fvec3& Point, const xmath::fvec3& Impulse ) noexcept
     {
         const auto& Bodies = R.m_Runtime.m_Box.m_Bodies;

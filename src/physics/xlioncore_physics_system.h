@@ -173,6 +173,10 @@ namespace xlioncore::physics
             >;
 
         backend                    m_Backend;
+        // The Play tools' hand (Tomas 2026-11-19, xlevel): a left drag pulls the dynamic body under the mouse - a static anchor and a motor
+        // joint as the ragdoll editor's hand (PullRagdollBody); any body of this world, a ragdoll's too
+        b3BodyId                   m_HandAnchor = b3_nullBodyId, m_HandBody = b3_nullBodyId;
+        b3JointId                  m_HandJoint  = b3_nullJointId;
 
         // The places where other systems connect to the physics: they run once for each fixed step.
         // What the connectors give to the systems connected to them (see xecs::system::constraint): both run once for every fixed step, so both give a fixed delta time. That one is before the

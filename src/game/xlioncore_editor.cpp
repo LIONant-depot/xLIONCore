@@ -179,6 +179,13 @@ namespace
             const auto Infos = InfosOf(Components);
             return m_Game.m_pGameMgr->getOrCreateArchetype(Infos).CreateEntity();
         }
+        xecs::component::entity CreateEntityWith(std::span<const xecs::component::type::guid> Components, component_init Init, void* pUser) noexcept override
+        {
+            const auto Infos = InfosOf(Components);
+            xecs::persist::details::staged_components Staged(Infos);        // (the scene loader's and the prefab spawner's way: the build plan runs the builders)
+            if (Init) for (const auto* p : Infos) if (auto* pData = Staged.find(*p)) Init(pUser, *p, pData);
+            return Staged.Create(W(), W().getBuildPlan(Infos));
+        }
         xecs::component::entity ChangeComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add, std::span<const xecs::component::type::guid> Remove) noexcept override
         {
             const auto AddInfos = InfosOf(Add), RemoveInfos = InfosOf(Remove);
@@ -365,6 +372,9 @@ namespace
         {
             return m_Game.m_pGameMgr && xlioncore::physics::TeleportDynamicBody(*m_Game.m_pGameMgr, Entity, Position, Rotation);
         }
+        bool HandGrab(const xmath::fvec3& Origin, const xmath::fvec3& Translation, float& OutFraction) noexcept override { return m_Game.m_pGameMgr && xlioncore::physics::HandGrab(*m_Game.m_pGameMgr, Origin, Translation, OutFraction); }
+        void HandPull(const xmath::fvec3& Target, float Hertz) noexcept override { if (m_Game.m_pGameMgr) xlioncore::physics::HandPull(*m_Game.m_pGameMgr, Target, Hertz); }
+        void HandRelease() noexcept override { if (m_Game.m_pGameMgr) xlioncore::physics::HandRelease(*m_Game.m_pGameMgr); }
 
         void MarkResourceUpdated(std::uint64_t TypeGuid, std::uint64_t Instance) noexcept override { xlioncore::resources::MarkUpdated(TypeGuid, Instance); }
     };

@@ -29,7 +29,7 @@ namespace xlioncore
     struct xECSEditor
     {
         // Bumped when the interface changes in a way that a binary built against another version cannot use.
-        static constexpr std::uint32_t kVersion = 16;       // 16: MarkResourceUpdated (a resource compiled again reaches this copy's resource manager); 15: IsAlive is bounded (a handle past the slots is not alive: 14 read past the table); 14: IsAlive checks the stamp and the pool without asserting (the editor's world check relies on it: an older core would assert or read a stale slot); 13: LiveUpdatePrefab, PrefabUses (prefab plan phase 6); 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
+        static constexpr std::uint32_t kVersion = 17;       // 17: CreateEntityWith (an entity made through the build plan in a running world, with its first values: C69), HandGrab / HandPull / HandRelease (the Play tools); 16: MarkResourceUpdated (a resource compiled again reaches this copy's resource manager); 15: IsAlive is bounded (a handle past the slots is not alive: 14 read past the table); 14: IsAlive checks the stamp and the pool without asserting (the editor's world check relies on it: an older core would assert or read a stale slot); 13: LiveUpdatePrefab, PrefabUses (prefab plan phase 6); 12: SetPrefabSaveRedirect (prefab plan phase 5); 11: permanent ids are 64 bits (prefab plan phase 2), prefab instances are recipes (phase 3)
 
         virtual std::uint32_t Version() const noexcept = 0;
 
@@ -71,6 +71,10 @@ namespace xlioncore
         virtual void  DeleteEntity(xecs::component::entity Entity) noexcept = 0;
         // A new entity with those components (by guid: a guid this copy of the core does not know is skipped).
         virtual xecs::component::entity CreateEntity(std::span<const xecs::component::type::guid> Components) noexcept = 0;
+        // C69: the same made as the game makes its entities - through the build plan, so builder components (a collider) are built when the
+        // world runs; Init (optional) gives each component its first values before it is made (the data of its type, Info.m_Size bytes)
+        using component_init = void (*)(void* pUser, const xecs::component::type::info& Info, void* pData) noexcept;
+        virtual xecs::component::entity CreateEntityWith(std::span<const xecs::component::type::guid> Components, component_init Init, void* pUser) noexcept = 0;
         // Components added to / removed from an entity: it moves to another archetype, so the handle that comes back is the entity's new one (the old handle is stale).
         virtual xecs::component::entity AddComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Add) noexcept = 0;
         virtual xecs::component::entity RemoveComponents(xecs::component::entity Entity, std::span<const xecs::component::type::guid> Remove) noexcept = 0;
@@ -160,6 +164,10 @@ namespace xlioncore
 
         // ---- physics
         virtual bool TeleportDynamicBody(xecs::component::entity Entity, const xmath::fvec3& Position, const xmath::fquat& Rotation) noexcept = 0;
+        // the Play tools' hand (xlioncore::physics::HandGrab / HandPull / HandRelease): a left drag pulls the dynamic body under the mouse
+        virtual bool HandGrab(const xmath::fvec3& Origin, const xmath::fvec3& Translation, float& OutFraction) noexcept = 0;
+        virtual void HandPull(const xmath::fvec3& Target, float Hertz) noexcept = 0;
+        virtual void HandRelease() noexcept = 0;
 
         // ---- resources
         // The resource was compiled again (the editor, after a compile): this copy's resources move to the new data (xlioncore::resources::MarkUpdated:

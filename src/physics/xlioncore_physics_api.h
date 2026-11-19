@@ -56,6 +56,13 @@ namespace xlioncore::physics
     // The feet's ground casts (K3) and any game query.
     XLIONCORE_API ray_hit CastRayClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const xmath::fvec3& Translation ) noexcept;
 
+    // The hand (the Play tools, Tomas 2026-11-19): HandGrab takes the DYNAMIC body the ray hits (false: none) at the hit point; HandPull pulls
+    // that point toward Target with a spring of Hertz (its force capped at four times the weight of 60 kg or of the body, the larger: it
+    // lifts a person, it never flings a crate), HandRelease lets go. One hand per world.
+    XLIONCORE_API bool HandGrab   ( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const xmath::fvec3& Translation, float& OutFraction ) noexcept;
+    XLIONCORE_API void HandPull   ( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Target, float Hertz ) noexcept;
+    XLIONCORE_API void HandRelease( xecs::game_mgr::instance& GameMgr ) noexcept;
+
     // Shape casts and overlaps (plan 13.2; xlioncore_physics_queries.h): the first thing Shape (relative to Origin) hits moving along
     // Translation - sensors and SkipEntity's bodies (0: none, e.g. the caster's own) left out; a shape that starts inside something hits at
     // fraction 0 - and the entities whose bodies overlap Shape at Origin (each once; returns how many, writes up to MaxOut). No game physics:

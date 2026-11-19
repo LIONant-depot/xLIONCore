@@ -103,6 +103,47 @@ namespace xlioncore::physics
         return Out;
     }
 
+    void HandRelease( xecs::game_mgr::instance& GameMgr ) noexcept
+    {
+        auto* pGame = game::From(GameMgr); auto* pS = pGame ? pGame->m_pPhysics : nullptr; if (!pS) return;
+        if (b3Joint_IsValid(pS->m_HandJoint)) b3DestroyJoint(pS->m_HandJoint, true);
+        if (b3Body_IsValid(pS->m_HandAnchor)) b3DestroyBody(pS->m_HandAnchor);
+        pS->m_HandJoint = b3_nullJointId; pS->m_HandAnchor = pS->m_HandBody = b3_nullBodyId;
+    }
+
+    bool HandGrab( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const xmath::fvec3& Translation, float& OutFraction ) noexcept
+    {
+        HandRelease(GameMgr);
+        auto* pGame = game::From(GameMgr); auto* pS = pGame ? pGame->m_pPhysics : nullptr; if (!pS) return false;
+        const auto R = b3World_CastRayClosest(pS->m_Backend.World(), b3Pos{ Origin.m_X, Origin.m_Y, Origin.m_Z }, b3Vec3{ Translation.m_X, Translation.m_Y, Translation.m_Z }, b3DefaultQueryFilter());
+        if (!R.hit) return false;
+        const auto Id = b3Shape_GetBody(R.shapeId);
+        if (b3Body_GetType(Id) != b3_dynamicBody) return false;
+        OutFraction = R.fraction;
+        const auto Local = b3Body_GetLocalPoint(Id, R.point);
+        b3BodyDef AD = b3DefaultBodyDef();
+        pS->m_HandAnchor = b3CreateBody(pS->m_Backend.World(), &AD);
+        b3MotorJointDef JD = b3DefaultMotorJointDef();
+        JD.base.bodyIdA = pS->m_HandAnchor; JD.base.bodyIdB = Id;
+        JD.base.localFrameA = { { float(R.point.x), float(R.point.y), float(R.point.z) }, { { 0, 0, 0 }, 1 } };
+        JD.base.localFrameB = { Local, { { 0, 0, 0 }, 1 } };
+        JD.linearHertz = 8; JD.linearDampingRatio = 0.7f; JD.maxSpringForce = 4.0f * std::max(60.0f, b3Body_GetMass(Id)) * 9.81f;
+        JD.angularHertz = 0; JD.maxSpringTorque = 0; JD.maxVelocityForce = 0; JD.maxVelocityTorque = 0;
+        pS->m_HandJoint = b3CreateMotorJoint(pS->m_Backend.World(), &JD);
+        pS->m_HandBody = Id;
+        b3Body_SetAwake(Id, true);
+        return true;
+    }
+
+    void HandPull( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Target, float Hertz ) noexcept
+    {
+        auto* pGame = game::From(GameMgr); auto* pS = pGame ? pGame->m_pPhysics : nullptr; if (!pS) return;
+        if (!b3Joint_IsValid(pS->m_HandJoint) || !b3Body_IsValid(pS->m_HandBody)) { HandRelease(GameMgr); return; }
+        b3Joint_SetLocalFrameA(pS->m_HandJoint, { { Target.m_X, Target.m_Y, Target.m_Z }, { { 0, 0, 0 }, 1 } });
+        b3MotorJoint_SetLinearHertz(pS->m_HandJoint, Hertz);
+        b3Body_SetAwake(pS->m_HandBody, true);
+    }
+
     ray_hit CastShapeClosest( xecs::game_mgr::instance& GameMgr, const xmath::fvec3& Origin, const query_shape& Shape, const xmath::fvec3& Translation, std::uint64_t SkipEntity ) noexcept
     {
         ray_hit Out;

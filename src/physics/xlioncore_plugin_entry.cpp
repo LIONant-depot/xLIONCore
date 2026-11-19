@@ -359,13 +359,15 @@ namespace xlioncore::physics
                 R.m_Balancer.Begin(G, Box, R.m_Runtime.m_Cur, Cur);
                 std::printf("[Balance] %s: feet bodies %d and %d\n", R.m_Balancer.Ready() ? "on" : "NOT on (no pelvis above the feet)", R.m_Balancer.Foot(0), R.m_Balancer.Foot(1)); std::fflush(stdout);
             }
-            R.m_Balancer.Targets(Box, R.m_Runtime.m_Cur, Cur, Dt);
-            if (R.m_Balancer.Steps() != R.m_BalSteps) { R.m_BalSteps = R.m_Balancer.Steps(); std::printf("[Balance] step %d\n", R.m_BalSteps); std::fflush(stdout); }
-            if (R.m_BalPrev.size() != Cur.size()) R.m_BalPrev = Cur;
-            Prev = R.m_BalPrev; R.m_BalPrev = Cur;
+            // E66 (Tomas 2026-11-19 "they always fold down"): the balancer runs every PHYSICS step (system::ApplySupport, as the headless env runs
+            // it), not once a frame - a Debug editor at 15-30 fps ran the controller at that rate, its steps and stance in lumps
+            R.m_BalAnim = Cur;
         }
-        xanimation::SetTrackingTargets(Box, G, Cur, P.m_Gain, P.m_Damping, Prev, Dt, P.m_FeedForward, 9.81f, P.m_JointTone);
-        if (P.m_GravityFF > 0 && !P.m_bSupported && R.m_Balancer.Ready()) R.m_Balancer.AfterTracking(Box, R.m_Runtime.m_Cur, Cur);     // (the swinging leg's motors close on its error: m_SwingClose)
+        else
+        {
+            xanimation::SetTrackingTargets(Box, G, Cur, P.m_Gain, P.m_Damping, Prev, Dt, P.m_FeedForward, 9.81f, P.m_JointTone);
+            R.m_BalAnim.clear();
+        }
         // (these were inside the comment above since ba5b7b2 - never set: the replay, MeasureTracking and the per-step support read them)
         R.m_TrackTone.assign(P.m_JointTone.begin(), P.m_JointTone.end()); R.m_TrackPrev = Prev; R.m_TrackGain = P.m_Gain; R.m_TrackDamping = P.m_Damping; R.m_TrackFF = P.m_FeedForward; R.m_TrackDt = Dt; R.m_bTrackSupported = P.m_bSupported;
         R.m_TrackTarget = Cur;              // (the steps until the next call pull toward these: ragdoll::MeasureTracking measures each)

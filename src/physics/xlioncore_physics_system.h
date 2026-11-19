@@ -94,7 +94,8 @@ namespace xlioncore::physics
         xanimation::balancer        m_Balancer;
         bool                        m_bBalBegun = false;
         int                         m_BalSteps = 0;
-        std::vector<xanimation::rigid> m_BalPrev;                   // (its last targets as the balancer changed them: the feed-forward motor's previous)
+        std::vector<xanimation::rigid> m_BalPrev;
+        std::vector<xanimation::rigid> m_BalAnim;                   // (E66: the animation's targets the balancer works from each physics step)                   // (its last targets as the balancer changed them: the feed-forward motor's previous)
         int                         m_nSteps = 0;
 
         ragdoll() = default;
@@ -227,6 +228,19 @@ namespace xlioncore::physics
                 if (R.m_bTrackSupported && !R.m_TrackTarget.empty() && !R.m_Runtime.m_Box.m_Bodies.empty() && Dt > 0)
                     b3Body_SetTargetTransform(R.m_Runtime.m_Box.m_Bodies[0], b3MakeWorldTransform(xanimation::ToB3(R.m_TrackTarget[0])), Dt, true);
                 if (R.m_TrackGravityFF <= 0 || R.m_bTrackSupported || R.m_TrackTarget.empty() || !R.m_Balancer.Ready()) continue;
+                if (!R.m_BalAnim.empty() && Dt > 0)     // (E66: the balancer each physics step - its targets from the animation's, its clock the physics')
+                {
+                    auto Cur = R.m_BalAnim;
+                    R.m_Balancer.Targets(R.m_Runtime.m_Box, R.m_Runtime.m_Cur, Cur, Dt);
+                    if (R.m_Balancer.Steps() != R.m_BalSteps) { R.m_BalSteps = R.m_Balancer.Steps(); std::printf("[Balance] step %d\n", R.m_BalSteps); std::fflush(stdout); }
+                    if (R.m_BalPrev.size() != Cur.size()) R.m_BalPrev = Cur;
+                    R.m_TrackPrev = R.m_BalPrev; R.m_BalPrev = Cur;
+                    R.m_Balancer.BeforeStep(R.m_Runtime.m_Box, R.m_Runtime.m_Cur);
+                    xanimation::SetTrackingTargets(R.m_Runtime.m_Box, R.m_Graph, Cur, R.m_TrackGain, R.m_TrackDamping, R.m_TrackPrev, Dt, R.m_TrackFF, 9.81f, R.m_TrackTone);
+                    R.m_Balancer.AfterTracking(R.m_Runtime.m_Box, R.m_Runtime.m_Cur, Cur);
+                    R.m_TrackTarget = std::move(Cur);
+                    continue;
+                }
                 R.m_Balancer.BeforeStep(R.m_Runtime.m_Box, R.m_Runtime.m_Cur);      // (the feet's pressure centres and the gravity feed-forward)
             }
         }

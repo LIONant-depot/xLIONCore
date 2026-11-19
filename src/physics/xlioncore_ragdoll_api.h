@@ -72,6 +72,8 @@ namespace xlioncore::physics
     // Hit shapes (ragdoll design v2; R68, Tomas 2026-11-19: boxes shot at an animated character went through it): the ragdoll's bodies made
     // kinematic and moved to the animated pose every frame (MoveRagdollHitShapes), each body naming Entity, its shapes reporting hits - a box
     // bounces off an animated character and TakeImpacts names it. A ragdoll made into hit shapes is only that (no tracking, no balance).
+    // The ragdoll's balance gave the fall up (xanimation::balancer::GaveUp: her centre dropped too far) - the caller's fall reflexes take over
+    XLIONCORE_API bool RagdollBalanceGaveUp( const ragdoll& Ragdoll ) noexcept;
     XLIONCORE_API void MakeRagdollHitShapes( ragdoll& Ragdoll, std::uint64_t Entity ) noexcept;
     XLIONCORE_API void MoveRagdollHitShapes( ragdoll& Ragdoll, std::span<const xanimation::rigid> BoneCur, float Dt ) noexcept;
 

@@ -406,6 +406,8 @@ namespace xlioncore::physics
         }
     }
 
+    bool RagdollBalanceGaveUp( const ragdoll& R ) noexcept { return R.m_bBalBegun && R.m_Balancer.GaveUp(); }
+
     void MakeRagdollHitShapes( ragdoll& R, std::uint64_t Entity ) noexcept
     {
         for (auto B : R.m_Runtime.m_Box.m_Bodies)
